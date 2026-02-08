@@ -108,6 +108,7 @@ export default function App() {
 
   const [poolDocs, setPoolDocs] = useState([]); // [{id, ...data}]
   const [mySubmissionGameId, setMySubmissionGameId] = useState(null);
+  const [sessionSubmissions, setSessionSubmissions] = useState([]); // [{ userId, gameId, submittedAt }]
 
   const [sessionMeta, setSessionMeta] = useState(null);
 
@@ -129,6 +130,8 @@ export default function App() {
     description: "",
     imageUrl: "",
   });
+
+  const [returnCtx, setReturnCtx] = useState(null);
 
   const currentGroup = useMemo(
     () => myGroups.find((g) => g.id === currentGroupId) || null,
@@ -381,6 +384,29 @@ export default function App() {
     });
   }, [currentGroupId]);
 
+    // --- All submissions for active vote (collecting phase) ---
+  useEffect(() => {
+    if (!currentGroupId || !activeVote?.id || activeVote?.status !== "collecting") {
+      setSessionSubmissions([]);
+      return;
+    }
+
+    const ref = collection(
+      db,
+      "groups",
+      currentGroupId,
+      "votes",
+      activeVote.id,
+      "submissions"
+    );
+
+    return onSnapshot(ref, (snap) => {
+      setSessionSubmissions(
+        snap.docs.map((d) => ({ userId: d.id, ...d.data() }))
+      );
+    });
+  }, [currentGroupId, activeVote?.id, activeVote?.status]);
+
   useEffect(() => {
     if (!user || !currentGroupId || !activeVote?.id) {
       setMySubmissionGameId(null);
@@ -541,10 +567,17 @@ export default function App() {
     .sort((a, b) => b.score - a.score);
 }, [activeVote, voteBallots, games]);
 
-  const activePoolGameIds = useMemo(
-    () => poolDocs.filter(p => p.isActive).map(p => p.id),
-    [poolDocs]
-  );
+  const poolActiveIds = useMemo(() => {
+    return new Set(poolDocs.filter((p) => p.isActive).map((p) => p.id));
+  }, [poolDocs]);
+
+  const submittedGameIds = useMemo(() => {
+    return new Set(sessionSubmissions.map((s) => s.gameId).filter(Boolean));
+  }, [sessionSubmissions]);
+
+  const activePoolGameIds = useMemo(() => {
+    return Array.from(poolActiveIds);
+  }, [poolActiveIds]);
 
   const effectiveWeights = useMemo(() => {
     return { ...DEFAULT_WEIGHTS, ...(groupWeightOverrides || {}) };
@@ -1218,62 +1251,76 @@ export default function App() {
   }
 
   async function submitToSession(gameId) {
-    if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+  if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
 
-    if (activeVote.status !== "collecting") {
-      showToast("Submissions are closed.", "error");
-      return;
-    }
+  if (activeVote.status !== "collecting") {
+    showToast("Submissions are closed.", "error");
+    return;
+  }
 
-    const now = Date.now();
+  const now = Date.now();
 
-    const submissionRef = doc(
-      db,
-      "groups", currentGroupId,
-      "votes", activeVote.id,
-      "submissions",
-      user.uid
-    );
+  const submissionRef = doc(
+    db,
+    "groups",
+    currentGroupId,
+    "votes",
+    activeVote.id,
+    "submissions",
+    user.uid
+  );
 
-    const poolRef = doc(db, "groups", currentGroupId, "pool", gameId);
+  const poolRef = doc(db, "groups", currentGroupId, "pool", gameId);
 
-    try {
-      await runTransaction(db, async (tx) => {
-        const [, poolSnap] = await Promise.all([
-          tx.get(submissionRef),
-          tx.get(poolRef),
-        ]);
+  try {
+    await runTransaction(db, async (tx) => {
+      const [subSnap, poolSnap] = await Promise.all([
+        tx.get(submissionRef),
+        tx.get(poolRef),
+      ]);
 
-        // Overwrite (1 submission per user, can change until voting starts)
-        tx.set(submissionRef, { userId: user.uid, gameId, submittedAt: now });
+      // Enforce: 1 submission per user per collecting phase
+      if (subSnap.exists()) {
+        throw new Error("You already submitted a game for this session.");
+      }
 
-        if (!poolSnap.exists()) {
-          tx.set(poolRef, {
-            isActive: true,
-            addedAt: now,
-            cycleStartedAt: now,          // optional: keep if you still like timestamps
-            cycleVoteCount: 0,
-            cycleStartedSession: sessionIndex,
-          });
-        } else {
-          const p = poolSnap.data();
-          if (!p.isActive) {
-            tx.update(poolRef, {
-              isActive: true,
-              cycleVoteCount: 0,
-              cycleStartedSession: sessionIndex,
-              cycleStartedAt: now,          // optional
-            });
-          }
-        }
+      // Enforce: cannot submit a game already active in the pool
+      if (poolSnap.exists() && poolSnap.data()?.isActive === true) {
+        throw new Error("That game is already in the pool.");
+      }
+
+      // Write submission (one doc per user)
+      tx.set(submissionRef, {
+        gameId,
+        submittedAt: now,
       });
 
-      showToast("Submitted ✅", "success");
-    } catch (e) {
-      console.error("submitToSession failed:", e);
-      showToast(e.code || e.message || "Submission failed.", "error");
-    }
+      // Activate/reactivate pool entry (this is what makes it disappear for everyone)
+      if (!poolSnap.exists()) {
+        tx.set(poolRef, {
+          isActive: true,
+          addedAt: now,
+          cycleStartedAt: now,
+          cycleVoteCount: 0,
+          cycleStartedSession: sessionIndex,
+        });
+      } else {
+        // During collecting, rules only allow these fields to change
+        tx.update(poolRef, {
+          isActive: true,
+          cycleStartedAt: now,
+          cycleVoteCount: 0,
+          cycleStartedSession: sessionIndex,
+        });
+      }
+    });
+
+    showToast("Submitted ✅", "success");
+  } catch (e) {
+    console.error("submitToSession failed:", e);
+    showToast(e?.message || e?.code || "Submission failed.", "error");
   }
+}
 
   async function startVoting() {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
@@ -1417,6 +1464,9 @@ export default function App() {
 
   // --- UI ---
   const showGameDetail = !!selectedGameFresh;
+
+  const isGroupInlineDetail =
+  activeTab === "group" && selectedGame && returnCtx?.activeTab === "group";
 
   const showFab =
     !showAuthPrompt &&
@@ -1579,86 +1629,111 @@ export default function App() {
 
       {/* Group */}
       {activeTab === "group" && (
-        <div className="space-y-4">
-          {/* PICKER VIEW */}
-          {groupView === "picker" && (
+        <>
+          {/* If a game was opened from Group, show details INSTEAD of showing the group list below */}
+          {selectedGame && returnCtx?.activeTab === "group" ? (
+            <GameDetail
+              game={selectedGameFresh}
+              inCollection={myCollection.has(selectedGameFresh.id)}
+              myRating={myRatings.get(selectedGameFresh.id) || null}
+              onBack={() => {
+                setSelectedGame(null);
+
+                // restore the group screen state
+                if (returnCtx) {
+                  setActiveTab(returnCtx.activeTab);
+                  setGroupView(returnCtx.groupView);
+                  setGroupTab(returnCtx.groupTab);
+                }
+                setReturnCtx(null);
+              }}
+              onRate={(value) => rateGame(selectedGameFresh.id, value)}
+              onAdd={() => addToCollection(selectedGameFresh.id)}
+              onRemove={() => removeFromCollection(selectedGameFresh.id)}
+            />
+          ) : (
             <div className="space-y-4">
-              <GroupsPanel
-                user={user}
-                myGroups={myGroups}
-                currentGroupId={currentGroupId}
-                setCurrentGroupId={setCurrentGroupId}
-                onCreateGroup={createGroup}
-                onJoinGroup={joinGroup}
-                onOpenGroup={() => {
-                  setGroupView("detail");
-                  setGroupTab("collection");
-                }}
-              />
+              {/* PICKER VIEW */}
+              {groupView === "picker" && (
+                <GroupsPanel
+                  user={user}
+                  myGroups={myGroups}
+                  currentGroupId={currentGroupId}
+                  setCurrentGroupId={setCurrentGroupId}
+                  onCreateGroup={createGroup}
+                  onJoinGroup={joinGroup}
+                  onOpenGroup={() => {
+                    setGroupView("detail");
+                    setGroupTab("collection");
+                  }}
+                />
+              )}
+
+              {/* DETAIL VIEW */}
+              {groupView === "detail" && (
+                currentGroup ? (
+                  <GroupDetail
+                    group={currentGroup}
+                    groupTab={groupTab}
+                    setGroupTab={setGroupTab}
+                    onBack={() => setGroupView("picker")}
+                    onLeaveGroup={leaveGroup}
+                    groupGames={groupGames}
+                    onOpenGame={(game) => {
+                      // IMPORTANT: save where we came from so Back restores the Group view
+                      setReturnCtx({ activeTab, groupView, groupTab });
+                      setSelectedGame(game);
+                    }}
+                    onToast={showToast}
+                    votingNode={
+                      <VotingPanel
+                        user={user}
+                        currentGroupId={currentGroupId}
+                        groupGames={groupGames}
+                        activeVote={activeVote}
+                        mySubmissionGameId={mySubmissionGameId}
+                        myBallot={myBallot}
+                        results={voteResults}
+                        onCallSession={callSession}
+                        onSubmitGame={submitToSession}
+                        onStartVoting={startVoting}
+                        onCastVote={castVote}
+                        onCloseVote={closeVote}
+                        onExportSession={exportSessionData}
+                        canManageSession={canManageSession}
+                        canCloseActiveVote={canCloseActiveVote}
+                        poolActiveIds={poolActiveIds}
+                        submittedGameIds={submittedGameIds}
+                      />
+                    }
+                    canEditNewness={user?.uid === currentGroup?.ownerId}
+                    onTogglePlayedOverride={togglePlayedOverride}
+                    settingsNode={
+                      <GroupSettingsPanel
+                        canEdit={user?.uid === currentGroup?.ownerId}
+                        weights={groupWeightOverrides}
+                        onSave={saveGroupWeights}
+                        onReset={resetGroupWeightsInFirestore}
+                      />
+                    }
+                  />
+                ) : (
+                  <div className="bg-white p-4 rounded-2xl shadow">
+                    <p className="text-sm text-gray-700 mb-3">
+                      No group selected. Please pick a group to continue.
+                    </p>
+                    <button
+                      className="text-sm text-blue-700 hover:underline"
+                      onClick={() => setGroupView("picker")}
+                    >
+                      ← Back to groups
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           )}
-
-          {/* DETAIL VIEW */}
-          {groupView === "detail" && (
-            currentGroup ? (
-              <GroupDetail
-                group={currentGroup}
-                groupTab={groupTab}
-                setGroupTab={setGroupTab}
-                onBack={() => setGroupView("picker")}
-                onLeaveGroup={leaveGroup}
-                groupGames={groupGames}
-                onOpenGame={(game) => setSelectedGame(game)}
-                onToast={showToast}
-                votingNode={
-                  <VotingPanel
-                    user={user}
-                    currentGroupId={currentGroupId}
-                    groupGames={groupGames}
-
-                    activeVote={activeVote}
-                    mySubmissionGameId={mySubmissionGameId}
-                    myBallot={myBallot}
-                    results={voteResults}
-
-                    onCallSession={callSession}
-                    onSubmitGame={submitToSession}
-                    onStartVoting={startVoting}
-                    onCastVote={castVote}
-                    onCloseVote={closeVote}
-                    onExportSession={exportSessionData}
-
-                    canManageSession={canManageSession}     // reuse if owner/group owner
-                    canCloseActiveVote={canCloseActiveVote}
-                  />
-                }
-                canEditNewness={user?.uid === currentGroup?.ownerId}
-                onTogglePlayedOverride={togglePlayedOverride}
-                settingsNode={
-                  <GroupSettingsPanel
-                    canEdit={user?.uid === currentGroup?.ownerId}
-                    weights={groupWeightOverrides}
-                    onSave={saveGroupWeights}
-                    onReset={resetGroupWeightsInFirestore}
-                  />
-                }
-              />
-            ) : (
-              // FALLBACK UI
-              <div className="bg-white p-4 rounded-2xl shadow">
-                <p className="text-sm text-gray-700 mb-3">
-                  No group selected. Please pick a group to continue.
-                </p>
-                <button
-                  className="text-sm text-blue-700 hover:underline"
-                  onClick={() => setGroupView("picker")}
-                >
-                  ← Back to groups
-                </button>
-              </div>
-            )
-          )}
-        </div>
+        </>
       )}
 
       {/* Library / Collection */}
@@ -1707,7 +1782,7 @@ export default function App() {
       />
 
       {/* Game detail (works from any tab) */}
-      {showGameDetail && (
+      {showGameDetail && !isGroupInlineDetail && (
         <GameDetail
           game={selectedGameFresh}
           inCollection={myCollection.has(selectedGameFresh.id)}
@@ -1720,6 +1795,7 @@ export default function App() {
           onEdit={() => openEditGame(selectedGameFresh)}
         />
       )}
+
       <Modal
         open={!!winnerModal}
         title="Winner"

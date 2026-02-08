@@ -113,41 +113,43 @@ export default function GroupDetail({
               populate it.
             </p>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 items-start justify-items-start">
-              {groupGames.map((game) => {
-                const isNewForGroup =
-                  Number(game.playedCount || 0) === 0 && !game.playedOverride;
+            <div className="mx-auto max-w-6xl">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 items-start">
+                {groupGames.map((game) => {
+                  const isNewForGroup =
+                    Number(game.playedCount || 0) === 0 && !game.playedOverride;
 
-                const selected = false; // group collection doesn’t need selection yet
+                  const selected = false; // group collection doesn’t need selection yet
 
-                return (
-                  <div key={game.id} className="relative">
-                    <GameTile
-                      game={game}
-                      selected={selected}
-                      disabled={false}
-                      showNew={isNewForGroup}
-                      inPool={!!game.isActiveInPool}
-                      onClick={() => onOpenGame(game)}
-                    />
+                  return (
+                    <div key={game.id} className="relative">
+                      <GameTile
+                        game={game}
+                        selected={selected}
+                        disabled={false}
+                        showNew={isNewForGroup}
+                        inPool={!!game.isActiveInPool}
+                        onClick={() => onOpenGame(game)}
+                        className="max-w-[220px] mx-auto"
+                      />
 
-                    {/* Optional: keep the toggle as a small overlay button */}
-                    {canEditNewness && onTogglePlayedOverride && (
-                      <button
-                        type="button"
-                        className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded hover:bg-black/80"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTogglePlayedOverride(game.id, !game.playedOverride);
-                        }}
-                        title="Only the group owner can change this"
-                      >
-                        {game.playedOverride ? "↩︎ New" : "✓ Played"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+                      {canEditNewness && onTogglePlayedOverride && (
+                        <button
+                          type="button"
+                          className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded hover:bg-black/80"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTogglePlayedOverride(game.id, !game.playedOverride);
+                          }}
+                          title="Only the group owner can change this"
+                        >
+                          {game.playedOverride ? "↩︎ New" : "✓ Played"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

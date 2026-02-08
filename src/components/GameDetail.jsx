@@ -39,14 +39,19 @@ export default function GameDetail({
       </div>
 
       {game.imageUrl && (
-      <div className="w-full overflow-hidden rounded-2xl bg-gray-100">
+      <div className="w-full flex justify-center bg-gray-100 rounded-2xl overflow-hidden mb-4">
         <img
           src={game.imageUrl}
           alt={game.title}
-          style={{ maxHeight: "60vh" }}          // ✅ guaranteed
-          className="w-full h-auto object-contain block"
           loading="lazy"
           referrerPolicy="no-referrer"
+          className="block object-contain"
+          style={{
+            maxHeight: "70vh",     // never taller than viewport
+            maxWidth: "100%",      // never wider than container
+            width: "auto",         // ❗ do not stretch
+            height: "auto",        // ❗ do not stretch
+          }}
           onError={(e) => {
             e.currentTarget.style.display = "none";
           }}

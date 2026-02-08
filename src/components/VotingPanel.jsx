@@ -1,5 +1,59 @@
 // src/components/VotingPanel.jsx
 import { useMemo, useState } from "react";
+import GameImage from "./GameImage";
+import Fab from "./ui/Fab";
+
+function VoteTile({
+  game,
+  selected,
+  disabled,
+  showNew,
+  inPool,
+  onClick,
+}) {
+  const imgSrc = game.imageThumbUrl || game.imageUrl || null;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={[
+        "w-full text-left rounded-xl transition",
+        "focus:outline-none",
+        selected
+          ? "outline outline-4 outline-blue-500 outline-offset-2"
+          : "outline outline-1 outline-gray-700 hover:outline-blue-300 hover:outline-2 hover:outline-offset-2",
+        disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
+      ].join(" ")}
+    >
+      <div className="relative">
+        {imgSrc ? (
+          <GameImage
+            src={imgSrc}
+            alt={game.title}
+            variant="square"
+            containPct={0.9}
+            className="bg-neutral-800"
+          />
+        ) : (
+          <div className="w-full aspect-square rounded-xl bg-neutral-800 flex items-center justify-center text-gray-400 text-sm">
+            No image
+          </div>
+        )}
+
+        <div className="absolute top-2 left-2 flex gap-1 text-xs">
+          {showNew && <span className="bg-black/70 px-1.5 py-0.5 rounded">🆕</span>}
+          {inPool && <span className="bg-black/70 px-1.5 py-0.5 rounded">🎲</span>}
+        </div>
+      </div>
+
+      <div className="mt-2 px-2 pb-2 text-sm font-medium text-center text-white truncate">
+        {game.title}
+      </div>
+    </button>
+  );
+}
 
 function byScoreDesc(a, b) {
   return (b.score || 0) - (a.score || 0);
@@ -18,6 +72,9 @@ function VotingPanelInner({
   user,
   currentGroupId,
   groupGames,
+
+  poolActiveIds,
+  submittedGameIds,
 
   activeVote,
   mySubmissionGameId,
@@ -49,9 +106,27 @@ function VotingPanelInner({
     return (results || []).map((r) => r.gameId);
   }, [activeVote, results]);
 
+  const availableSubmissionGames = useMemo(() => {
+    if (status !== "collecting") return groupGames || [];
+
+    const pool = poolActiveIds instanceof Set ? poolActiveIds : new Set();
+    const submitted = submittedGameIds instanceof Set ? submittedGameIds : new Set();
+
+    return (groupGames || []).filter((g) => !pool.has(g.id) && !submitted.has(g.id));
+  }, [status, groupGames, poolActiveIds, submittedGameIds]);
+
   // Local selection for 2-step confirm flow (select -> submit/vote)
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
   const [selectedVoteId, setSelectedVoteId] = useState(null);
+
+  const selectedStillAvailable = useMemo(() => {
+    if (!selectedSubmissionId) return false;
+    return availableSubmissionGames.some((g) => g.id === selectedSubmissionId);
+  }, [availableSubmissionGames, selectedSubmissionId]);
+
+  const effectiveSelectedSubmissionId = selectedStillAvailable
+    ? selectedSubmissionId
+    : null;
 
   const canSubmit = !!user && !!currentGroupId && status === "collecting";
   const canVote = !!user && !!currentGroupId && status === "open";
@@ -59,8 +134,17 @@ function VotingPanelInner({
   const alreadySubmitted = !!mySubmissionGameId;
   const alreadyVoted = !!myBallot?.gameId;
 
-  const submitDisabled = !canSubmit || alreadySubmitted || !selectedSubmissionId;
-  const voteDisabled = !canVote || alreadyVoted || !selectedVoteId;
+const selectedVoteStillAvailable = useMemo(() => {
+  if (!selectedVoteId) return false;
+  return candidateIds.includes(selectedVoteId);
+}, [candidateIds, selectedVoteId]);
+
+const effectiveSelectedVoteId = selectedVoteStillAvailable ? selectedVoteId : null;
+
+const submitDisabled =
+  !canSubmit || alreadySubmitted || !effectiveSelectedSubmissionId;
+
+const voteDisabled = !canVote || alreadyVoted || !effectiveSelectedVoteId;
 
   const scoredResults = useMemo(() => {
     const arr = Array.isArray(results) ? [...results] : [];
@@ -88,13 +172,13 @@ function VotingPanelInner({
 
   async function handleSubmit() {
     if (submitDisabled) return;
-    await onSubmitGame(selectedSubmissionId);
+    await onSubmitGame(effectiveSelectedSubmissionId);
     setSelectedSubmissionId(null);
   }
 
   async function handleVote() {
     if (voteDisabled) return;
-    await onCastVote(selectedVoteId);
+    await onCastVote(effectiveSelectedVoteId);
     setSelectedVoteId(null);
   }
 
@@ -178,102 +262,43 @@ function VotingPanelInner({
       </div>
 
       {activeVote?.status === "collecting" && (
-        <div className="bg-white rounded-2xl shadow border p-4 space-y-3">
+        <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold">Submit one game</h3>
           <p className="text-sm text-gray-600">
             Select a game, then press <span className="font-semibold">Submit</span>. You can only submit once.
           </p>
-
+        
+          {availableSubmissionGames.length === 0 ? (
+            <p className="text-sm text-gray-600">
+              No available games to submit. (Games already in the pool or already submitted are hidden.)
+            </p>
+          ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
-            {groupGames.map((g) => {
-              const selected = selectedSubmissionId === g.id;
-              const submitted = mySubmissionGameId === g.id;
+            {availableSubmissionGames.map((g) => {
+              const selected = effectiveSelectedSubmissionId === g.id;
 
               return (
-                <button
+                <VoteTile
                   key={g.id}
-                  className={[
-                    "text-left rounded-2xl border transition w-full relative touch-manipulation active:scale-100",
-                    // base background
-                    selected ? "bg-blue-50" : "bg-gray-50 hover:bg-gray-100",
-                    // hover ring for clarity (even when not selected)
-                    !selected ? "hover:outline hover:outline-2 hover:outline-blue-200 hover:outline-offset-2 hover:border-blue-300" : "",
-                    // sticky selected ring
-                    selected ? "outline outline-4 outline-blue-500 outline-offset-2 border-blue-500"
-                    : "border-gray-200",
-                    // disabled styling
-                    alreadySubmitted ? "opacity-70 cursor-not-allowed" : "cursor-pointer",
-                  ].join(" ")}
+                  game={g}
+                  selected={selected}
+                  disabled={alreadySubmitted}
+                  showNew={false} // optionally wire group-newness later
+                  inPool={false}  // collecting list already excludes pool games
                   onClick={() => {
                     if (alreadySubmitted) return;
                     setSelectedSubmissionId(g.id);
                   }}
-                  disabled={alreadySubmitted}
-                >
-                  <div className="aspect-square w-full bg-gray-200 overflow-hidden flex items-center justify-center">
-                    {g.imageUrl ? (
-                      <img
-                        src={g.imageUrl}
-                        alt={g.title}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        draggable={false}
-                        className="pointer-events-none select-none"
-                        style={{
-                          display: "block",
-                          maxWidth: "100%",
-                          maxHeight: "100%",
-                          width: "auto",
-                          height: "auto",
-                          objectFit: "contain",
-                          objectPosition: "center",
-
-                          // stop any hover/active zoom rules
-                          transform: "none",
-                          transition: "none",
-
-                          // iOS/Safari: stop long-press drag/callout
-                          WebkitUserDrag: "none",
-                          WebkitTouchCallout: "none",
-                          userSelect: "none",
-                        }}
-                      />
-                    ) : null}
-                  </div>
-
-                  <div className="p-2">
-                    <div className="text-sm font-semibold truncate flex items-center gap-2">
-                      {g.title}
-                      {submitted ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full border">
-                          Submitted
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
+                />
               );
             })}
           </div>
-
-          <div className="flex justify-end">
-            <button
-              className={[
-                "px-4 py-2 rounded-xl border",
-                submitDisabled ? "bg-gray-100 text-gray-400" : "bg-white hover:bg-gray-50",
-              ].join(" ")}
-              disabled={submitDisabled}
-              onClick={handleSubmit}
-              title={alreadySubmitted ? "You already submitted." : ""}
-            >
-              Submit
-            </button>
-          </div>
+          )}
         </div>
       )}
 
       {activeVote?.status === "open" && (
-        <div className="bg-white rounded-2xl shadow border p-4 space-y-3">
+        <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold">Cast your vote</h3>
           <p className="text-sm text-gray-600">
             Select a game, then press <span className="font-semibold">Vote</span>. Your vote is secret until revealed.
@@ -283,88 +308,24 @@ function VotingPanelInner({
             {candidateIds.map((id) => {
               const g = gameMap.get(id) || { id, title: id, imageUrl: "" };
               const selected = selectedVoteId === id;
-              const voted = myBallot?.gameId === id;
 
               return (
-                <button
+                <VoteTile
                   key={id}
-                  className={[
-                    "text-left rounded-2xl border transition w-full relative touch-manipulation active:scale-100",
-                    // base background
-                    selected ? "bg-blue-50" : "bg-gray-50 hover:bg-gray-100",
-                    // hover ring for clarity (even when not selected)
-                    !selected ? "hover:outline hover:outline-2 hover:outline-blue-200 hover:outline-offset-2 hover:border-blue-300" : "",
-                    // sticky selected ring
-                    selected ? "outline outline-4 outline-blue-500 outline-offset-2 border-blue-500"
-                    : "border-gray-200",
-                    // disabled styling
-                    alreadyVoted ? "opacity-70 cursor-not-allowed" : "cursor-pointer",
-                  ].join(" ")}
+                  game={g}
+                  selected={selected}
+                  disabled={alreadyVoted}
+                  showNew={false} // optionally wire group-newness later
+                  inPool={true}   // these are “in session”
                   onClick={() => {
                     if (alreadyVoted) return;
                     setSelectedVoteId(id);
                   }}
-                  disabled={alreadyVoted}
-                >
-                  <div className="aspect-square w-full bg-gray-200 overflow-hidden flex items-center justify-center">
-                    {g.imageUrl ? (
-                      <img
-                        src={g.imageUrl}
-                        alt={g.title}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        draggable={false}
-                        className="pointer-events-none select-none"
-                        style={{
-                          display: "block",
-                          maxWidth: "100%",
-                          maxHeight: "100%",
-                          width: "auto",
-                          height: "auto",
-                          objectFit: "contain",
-                          objectPosition: "center",
-
-                          // stop any hover/active zoom rules
-                          transform: "none",
-                          transition: "none",
-
-                          // iOS/Safari: stop long-press drag/callout
-                          WebkitUserDrag: "none",
-                          WebkitTouchCallout: "none",
-                          userSelect: "none",
-                        }}
-                      />
-                    ) : null}
-                  </div>
-
-                  <div className="p-2">
-                    <div className="text-sm font-semibold truncate flex items-center gap-2">
-                      {g.title}
-                      {voted ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full border">
-                          Voted
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                </button>
+                />
               );
             })}
           </div>
 
-          <div className="flex justify-end">
-            <button
-              className={[
-                "px-4 py-2 rounded-xl border",
-                voteDisabled ? "bg-gray-100 text-gray-400" : "bg-white hover:bg-gray-50",
-              ].join(" ")}
-              disabled={voteDisabled}
-              onClick={handleVote}
-              title={alreadyVoted ? "You already voted." : ""}
-            >
-              Vote
-            </button>
-          </div>
         </div>
       )}
 
@@ -424,6 +385,25 @@ function VotingPanelInner({
           </div>
         </div>
       )}
+      <Fab
+        show={activeVote?.status === "collecting"}
+        variant="pill"
+        label={alreadySubmitted ? "Submitted" : "Submit"}
+        disabled={submitDisabled}
+        onClick={handleSubmit}
+      >
+        Submit
+      </Fab>
+
+      <Fab
+        show={activeVote?.status === "open"}
+        variant="pill"
+        label={alreadyVoted ? "Voted" : "Vote"}
+        disabled={voteDisabled}
+        onClick={handleVote}
+      >
+        Vote
+      </Fab>
     </div>
   );
 }

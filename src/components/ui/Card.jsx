@@ -5,6 +5,7 @@ export function Card({ children, interactive, noPadding, ...props }) {
       {...props}
       className={[
         "bg-neutral-900 rounded-2xl shadow",
+        "overflow-hidden flex flex-col min-w-0", // <-- crucial containment
         interactive && "cursor-pointer hover:bg-neutral-800",
         !noPadding && "p-4",
       ]
@@ -21,9 +22,5 @@ export function CardBody({ children }) {
 }
 
 export function CardFooter({ children, className = "" }) {
-  return (
-    <div className={`p-4 pt-0 ${className}`}>
-      {children}
-    </div>
-  );
+  return <div className={`p-4 pt-0 ${className}`}>{children}</div>;
 }
