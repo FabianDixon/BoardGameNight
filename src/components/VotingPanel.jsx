@@ -107,13 +107,20 @@ function VotingPanelInner({
   }, [activeVote, results]);
 
   const availableSubmissionGames = useMemo(() => {
-    if (status !== "collecting") return groupGames || [];
+    if (status !== "collecting") return [];
 
     const pool = poolActiveIds instanceof Set ? poolActiveIds : new Set();
     const submitted = submittedGameIds instanceof Set ? submittedGameIds : new Set();
 
     return (groupGames || []).filter((g) => !pool.has(g.id) && !submitted.has(g.id));
   }, [status, groupGames, poolActiveIds, submittedGameIds]);
+
+  const [phaseSearch, setPhaseSearch] = useState("");
+
+  const normalizedPhaseQuery = useMemo(
+    () => phaseSearch.trim().toLowerCase(),
+    [phaseSearch]
+  );
 
   // Local selection for 2-step confirm flow (select -> submit/vote)
   const [selectedSubmissionId, setSelectedSubmissionId] = useState(null);
@@ -123,6 +130,21 @@ function VotingPanelInner({
     if (!selectedSubmissionId) return false;
     return availableSubmissionGames.some((g) => g.id === selectedSubmissionId);
   }, [availableSubmissionGames, selectedSubmissionId]);
+
+  const filteredSubmissionGames = useMemo(() => {
+    if (!normalizedPhaseQuery) return availableSubmissionGames;
+    return availableSubmissionGames.filter((g) =>
+      (g.title || "").toLowerCase().includes(normalizedPhaseQuery)
+    );
+  }, [availableSubmissionGames, normalizedPhaseQuery]);
+
+  const filteredCandidateIds = useMemo(() => {
+    if (!normalizedPhaseQuery) return candidateIds;
+    return candidateIds.filter((id) => {
+      const g = gameMap.get(id);
+      return (g?.title || "").toLowerCase().includes(normalizedPhaseQuery);
+    });
+  }, [candidateIds, gameMap, normalizedPhaseQuery]);
 
   const effectiveSelectedSubmissionId = selectedStillAvailable
     ? selectedSubmissionId
@@ -134,17 +156,16 @@ function VotingPanelInner({
   const alreadySubmitted = !!mySubmissionGameId;
   const alreadyVoted = !!myBallot?.gameId;
 
-const selectedVoteStillAvailable = useMemo(() => {
-  if (!selectedVoteId) return false;
-  return candidateIds.includes(selectedVoteId);
-}, [candidateIds, selectedVoteId]);
+  const selectedVoteStillAvailable = useMemo(() => {
+    if (!selectedVoteId) return false;
+    return candidateIds.includes(selectedVoteId);
+  }, [candidateIds, selectedVoteId]);
 
-const effectiveSelectedVoteId = selectedVoteStillAvailable ? selectedVoteId : null;
+  const effectiveSelectedVoteId = selectedVoteStillAvailable ? selectedVoteId : null;
 
-const submitDisabled =
-  !canSubmit || alreadySubmitted || !effectiveSelectedSubmissionId;
+  const submitDisabled = !canSubmit || alreadySubmitted || !effectiveSelectedSubmissionId;
 
-const voteDisabled = !canVote || alreadyVoted || !effectiveSelectedVoteId;
+  const voteDisabled = !canVote || alreadyVoted || !effectiveSelectedVoteId;
 
   const scoredResults = useMemo(() => {
     const arr = Array.isArray(results) ? [...results] : [];
@@ -267,14 +288,20 @@ const voteDisabled = !canVote || alreadyVoted || !effectiveSelectedVoteId;
           <p className="text-sm text-gray-600">
             Select a game, then press <span className="font-semibold">Submit</span>. You can only submit once.
           </p>
+
+          <input
+            type="text"
+            placeholder="Search by title..."
+            value={phaseSearch}
+            onChange={(e) => setPhaseSearch(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
         
-          {availableSubmissionGames.length === 0 ? (
-            <p className="text-sm text-gray-600">
-              No available games to submit. (Games already in the pool or already submitted are hidden.)
-            </p>
+          {filteredSubmissionGames.length === 0 ? (
+            <p className="text-sm text-gray-600">No matches for “{phaseSearch}”.</p>
           ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
-            {availableSubmissionGames.map((g) => {
+            {filteredSubmissionGames.map((g) => {
               const selected = effectiveSelectedSubmissionId === g.id;
 
               return (
@@ -304,28 +331,38 @@ const voteDisabled = !canVote || alreadyVoted || !effectiveSelectedVoteId;
             Select a game, then press <span className="font-semibold">Vote</span>. Your vote is secret until revealed.
           </p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
-            {candidateIds.map((id) => {
-              const g = gameMap.get(id) || { id, title: id, imageUrl: "" };
-              const selected = selectedVoteId === id;
+          <input
+            type="text"
+            placeholder="Search by title..."
+            value={phaseSearch}
+            onChange={(e) => setPhaseSearch(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+          />
+          {filteredCandidateIds.length === 0 ? (
+            <p className="text-sm text-gray-600">No matches for “{phaseSearch}”.</p>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
+              {filteredCandidateIds.map((id) => {
+                const g = gameMap.get(id) || { id, title: id, imageUrl: "" };
+                const selected = effectiveSelectedVoteId === id;
 
-              return (
-                <VoteTile
-                  key={id}
-                  game={g}
-                  selected={selected}
-                  disabled={alreadyVoted}
-                  showNew={false} // optionally wire group-newness later
-                  inPool={true}   // these are “in session”
-                  onClick={() => {
-                    if (alreadyVoted) return;
-                    setSelectedVoteId(id);
-                  }}
-                />
-              );
-            })}
-          </div>
-
+                return (
+                  <VoteTile
+                    key={id}
+                    game={g}
+                    selected={selected}
+                    disabled={alreadyVoted}
+                    showNew={false} // optionally wire group-newness later
+                    inPool={true}   // these are “in session”
+                    onClick={() => {
+                      if (alreadyVoted) return;
+                      setSelectedVoteId(id);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

@@ -481,7 +481,7 @@ export default function App() {
   const libraryGames = useMemo(() => {
     if (!normalizedQuery) return games;
     return games.filter((g) =>
-      `${g.title} ${g.description}`.toLowerCase().includes(normalizedQuery)
+      g.title?.toLowerCase().includes(normalizedQuery)
     );
   }, [games, normalizedQuery]);
 
@@ -489,7 +489,7 @@ export default function App() {
     const base = games.filter((g) => myCollection.has(g.id));
     if (!normalizedQuery) return base;
     return base.filter((g) =>
-      `${g.title} ${g.description}`.toLowerCase().includes(normalizedQuery)
+      g.title?.toLowerCase().includes(normalizedQuery)
     );
   }, [games, myCollection, normalizedQuery]);
 
