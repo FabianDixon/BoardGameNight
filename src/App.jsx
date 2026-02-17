@@ -32,6 +32,7 @@ import VotingPanel from "./components/VotingPanel";
 import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
+import { buildSessionMailto, copyJsonToClipboard } from "./utils/emailExport";
 
 const auth = getAuth();
 
@@ -582,6 +583,12 @@ export default function App() {
   const effectiveWeights = useMemo(() => {
     return { ...DEFAULT_WEIGHTS, ...(groupWeightOverrides || {}) };
   }, [groupWeightOverrides]);
+
+  const canEmailExport = useMemo(() => {
+    if (!user) return false;
+    if (user.isAnonymous) return false;
+    return !!user.email; // linked email account
+  }, [user]);
 
   // --- Actions ---
   const showToast = useCallback((message, type = "info", title = "") => {
@@ -1386,66 +1393,66 @@ export default function App() {
     }
   }
   // ---- Expot Data -----
-  async function exportSessionData(voteId) {
-    if (!user || !currentGroupId || !voteId) return;
-  
-    try {
-      const voteRef = doc(db, "groups", currentGroupId, "votes", voteId);
-      const voteSnap = await getDoc(voteRef);
-      if (!voteSnap.exists()) {
-        showToast("Vote not found.", "error");
-        return;
-      }
-      const vote = { id: voteSnap.id, ...voteSnap.data() };
-  
-      const [ballotsSnap, submissionsSnap] = await Promise.all([
-        getDocs(collection(db, "groups", currentGroupId, "votes", voteId, "ballots")),
-        getDocs(collection(db, "groups", currentGroupId, "votes", voteId, "submissions")),
-      ]);
-  
-      const ballots = ballotsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const submissions = submissionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  
-      const metaSnap = await getDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"));
-      const sessionMeta = metaSnap.exists() ? { id: metaSnap.id, ...metaSnap.data() } : null;
-  
-      // Candidate IDs: use vote.candidates if present, else derive from ballots
-      const candidateIds = Array.isArray(vote.candidates) && vote.candidates.length > 0
+  async function buildSessionExportPayload(voteId) {
+    const voteRef = doc(db, "groups", currentGroupId, "votes", voteId);
+    const voteSnap = await getDoc(voteRef);
+    if (!voteSnap.exists()) throw new Error("Vote not found.");
+
+    const vote = { id: voteSnap.id, ...voteSnap.data() };
+
+    const [ballotsSnap, submissionsSnap] = await Promise.all([
+      getDocs(collection(db, "groups", currentGroupId, "votes", voteId, "ballots")),
+      getDocs(collection(db, "groups", currentGroupId, "votes", voteId, "submissions")),
+    ]);
+
+    const ballots = ballotsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const submissions = submissionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const metaSnap = await getDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"));
+    const sessionMetaExport = metaSnap.exists() ? { id: metaSnap.id, ...metaSnap.data() } : null;
+
+    const candidateIds =
+      Array.isArray(vote.candidates) && vote.candidates.length > 0
         ? vote.candidates
         : Array.from(new Set(ballots.map((b) => b.gameId).filter(Boolean)));
-  
-      // Pool snapshot for candidate games
-      const poolSnaps = await Promise.all(
-        candidateIds.map((gid) => getDoc(doc(db, "groups", currentGroupId, "pool", gid)))
-      );
-      const poolSnapshot = poolSnaps
-        .filter((s) => s.exists())
-        .map((s) => ({ id: s.id, ...s.data() }));
-  
-      // Game snapshot (global catalog) for candidates (nice for offline analysis)
-      const gameSnaps = await Promise.all(candidateIds.map((gid) => getDoc(doc(db, "games", gid))));
-      const gamesSnapshot = gameSnaps
-        .filter((s) => s.exists())
-        .map((s) => ({ id: s.id, ...s.data() }));
-  
-      const payload = {
-        exportedAt: Date.now(),
-        groupId: currentGroupId,
-        vote,
-        sessionMeta,
-        submissions,
-        ballots,
-        candidateIds,
-        poolSnapshot,
-        gamesSnapshot,
-      };
-  
+
+    const poolSnaps = await Promise.all(
+      candidateIds.map((gid) => getDoc(doc(db, "groups", currentGroupId, "pool", gid)))
+    );
+    const poolSnapshot = poolSnaps
+      .filter((s) => s.exists())
+      .map((s) => ({ id: s.id, ...s.data() }));
+
+    const gameSnaps = await Promise.all(candidateIds.map((gid) => getDoc(doc(db, "games", gid))));
+    const gamesSnapshot = gameSnaps
+      .filter((s) => s.exists())
+      .map((s) => ({ id: s.id, ...s.data() }));
+
+    return {
+      exportedAt: Date.now(),
+      groupId: currentGroupId,
+      vote,
+      sessionMeta: sessionMetaExport,
+      submissions,
+      ballots,
+      candidateIds,
+      poolSnapshot,
+      gamesSnapshot,
+    };
+  }
+
+  async function exportSessionData(voteId) {
+    if (!user || !currentGroupId || !voteId) return;
+
+    try {
+      const payload = await buildSessionExportPayload(voteId);
+
       const json = JSON.stringify(payload, null, 2);
       const blob = new Blob([json], { type: "application/json" });
-  
+
       const ts = new Date().toISOString().replace(/[:.]/g, "-");
       const filename = `boardgame-session-${currentGroupId}-${voteId}-${ts}.json`;
-  
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -1454,11 +1461,32 @@ export default function App() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-  
+
       showToast("Export downloaded.", "success");
     } catch (e) {
       console.error("exportSessionData failed:", e);
       showToast(e.code || e.message || "Export failed.", "error");
+    }
+  }
+
+  async function emailSessionData(voteId) {
+    if (!user || !currentGroupId || !voteId) return;
+
+    try {
+      const payload = await buildSessionExportPayload(voteId);
+      const chars = await copyJsonToClipboard(payload);
+
+      showToast(`Export copied to clipboard (${chars} chars). Opening email…`, "success");
+
+      const mailto = buildSessionMailto({
+        groupName: currentGroup?.name,
+        voteId,
+      });
+
+      window.location.href = mailto;
+    } catch (e) {
+      console.error("emailSessionData failed:", e);
+      showToast(e.code || e.message || "Could not email export.", "error");
     }
   }
 
@@ -1700,6 +1728,8 @@ export default function App() {
                         onCastVote={castVote}
                         onCloseVote={closeVote}
                         onExportSession={exportSessionData}
+                        onEmailSession={emailSessionData}
+                        canEmailSession={canEmailExport}
                         canManageSession={canManageSession}
                         canCloseActiveVote={canCloseActiveVote}
                         poolActiveIds={poolActiveIds}

@@ -87,7 +87,9 @@ function VotingPanelInner({
   onCastVote,
   onCloseVote,
   onExportSession,
+  onEmailSession,
 
+  canEmailSession,
   canManageSession,
   canCloseActiveVote,
 }) {
@@ -251,8 +253,18 @@ function VotingPanelInner({
                 className="px-4 py-2 rounded-xl border bg-white"
                 onClick={() => onExportSession?.(activeVote.id)}
               >
-                Export session JSON
+                Download JSON
               </button>
+
+              {canEmailSession && (
+                <button
+                  className="px-4 py-2 rounded-xl border bg-white"
+                  onClick={() => onEmailSession?.(activeVote.id)}
+                >
+                  Email JSON
+                </button>
+              )}
+
               <button
                 className="px-4 py-2 rounded-xl border bg-white"
                 onClick={onCallSession}
