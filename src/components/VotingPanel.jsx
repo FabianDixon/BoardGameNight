@@ -9,6 +9,7 @@ function VoteTile({
   disabled,
   showNew,
   inPool,
+  isMine,
   onClick,
 }) {
   const imgSrc = game.imageThumbUrl || game.imageUrl || null;
@@ -45,6 +46,7 @@ function VoteTile({
         <div className="absolute top-2 left-2 flex gap-1 text-xs">
           {showNew && <span className="bg-black/70 px-1.5 py-0.5 rounded">🆕</span>}
           {inPool && <span className="bg-black/70 px-1.5 py-0.5 rounded">🎲</span>}
+          {isMine && <span className="bg-black/70 px-1.5 py-0.5 rounded">👤</span>}
         </div>
       </div>
 
@@ -71,6 +73,7 @@ function titleById(gameMap, id) {
 function VotingPanelInner({
   user,
   currentGroupId,
+  groupSettings,
   groupGames,
 
   poolActiveIds,
@@ -108,6 +111,23 @@ function VotingPanelInner({
     return (results || []).map((r) => r.gameId);
   }, [activeVote, results]);
 
+  const mySubId = useMemo(() => {
+    const x = mySubmissionGameId;
+    if (!x) return null;
+
+    // if parent accidentally passes the whole submission doc shape
+    if (typeof x === "object" && "gameId" in x) return String(x.gameId).trim();
+
+    return String(x).trim();
+  }, [mySubmissionGameId]);
+
+  const candidateIdsNormalized = useMemo(() => {
+    return (candidateIds || []).map((x) => {
+      if (x && typeof x === "object" && "gameId" in x) return String(x.gameId).trim();
+      return String(x).trim();
+    });
+  }, [candidateIds]);
+
   const availableSubmissionGames = useMemo(() => {
     if (status !== "collecting") return [];
 
@@ -141,12 +161,25 @@ function VotingPanelInner({
   }, [availableSubmissionGames, normalizedPhaseQuery]);
 
   const filteredCandidateIds = useMemo(() => {
-    if (!normalizedPhaseQuery) return candidateIds;
-    return candidateIds.filter((id) => {
+    let ids = candidateIdsNormalized;
+
+    if (groupSettings?.disallowVotingOwnSubmission && mySubId) {
+      ids = ids.filter((id) => id !== mySubId);
+    }
+
+    if (!normalizedPhaseQuery) return ids;
+
+    return ids.filter((id) => {
       const g = gameMap.get(id);
       return (g?.title || "").toLowerCase().includes(normalizedPhaseQuery);
     });
-  }, [candidateIds, gameMap, normalizedPhaseQuery]);
+  }, [
+    candidateIdsNormalized,
+    gameMap,
+    normalizedPhaseQuery,
+    groupSettings?.disallowVotingOwnSubmission,
+    mySubId,
+  ]);
 
   const effectiveSelectedSubmissionId = selectedStillAvailable
     ? selectedSubmissionId
@@ -158,16 +191,23 @@ function VotingPanelInner({
   const alreadySubmitted = !!mySubmissionGameId;
   const alreadyVoted = !!myBallot?.gameId;
 
+  const disallowOwnSubmissionVote =
+    !!groupSettings?.disallowVotingOwnSubmission && !!mySubId;
+
   const selectedVoteStillAvailable = useMemo(() => {
     if (!selectedVoteId) return false;
-    return candidateIds.includes(selectedVoteId);
-  }, [candidateIds, selectedVoteId]);
+    return filteredCandidateIds.includes(selectedVoteId);
+  }, [filteredCandidateIds, selectedVoteId]);
 
   const effectiveSelectedVoteId = selectedVoteStillAvailable ? selectedVoteId : null;
 
   const submitDisabled = !canSubmit || alreadySubmitted || !effectiveSelectedSubmissionId;
 
-  const voteDisabled = !canVote || alreadyVoted || !effectiveSelectedVoteId;
+  const voteDisabled =
+    !canVote ||
+    alreadyVoted ||
+    !effectiveSelectedVoteId ||
+    (disallowOwnSubmissionVote && effectiveSelectedVoteId === mySubId);
 
   const scoredResults = useMemo(() => {
     const arr = Array.isArray(results) ? [...results] : [];
@@ -201,6 +241,7 @@ function VotingPanelInner({
 
   async function handleVote() {
     if (voteDisabled) return;
+    if (disallowOwnSubmissionVote && effectiveSelectedVoteId === mySubId) return; // hard block
     await onCastVote(effectiveSelectedVoteId);
     setSelectedVoteId(null);
   }
@@ -209,7 +250,21 @@ function VotingPanelInner({
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow border p-4">
         <h2 className="text-2xl font-bold">Session</h2>
-
+        <div className="mt-3 text-xs font-mono text-gray-600 whitespace-pre-wrap">
+          {JSON.stringify(
+            {
+              status,
+              disallow: !!groupSettings?.disallowVotingOwnSubmission,
+              mySubmissionGameId,
+              mySubId,
+              activeVoteId: activeVote?.id,
+              candidatesCount: candidateIdsNormalized.length,
+              candidatesHead: candidateIdsNormalized.slice(0, 5),
+            },
+            null,
+            2
+          )}
+        </div>
         <div className="mt-2 text-sm text-gray-700">
           Active:{" "}
           <span className="font-semibold">
@@ -324,6 +379,7 @@ function VotingPanelInner({
                   disabled={alreadySubmitted}
                   showNew={false} // optionally wire group-newness later
                   inPool={false}  // collecting list already excludes pool games
+                  isMine={false} // all games in collecting phase are by definition not mine
                   onClick={() => {
                     if (alreadySubmitted) return;
                     setSelectedSubmissionId(g.id);
@@ -355,6 +411,9 @@ function VotingPanelInner({
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
               {filteredCandidateIds.map((id) => {
+                if (groupSettings?.disallowVotingOwnSubmission && mySubId && id === mySubId) {
+                  return null;
+                }
                 const g = gameMap.get(id) || { id, title: id, imageUrl: "" };
                 const selected = effectiveSelectedVoteId === id;
 
@@ -364,10 +423,12 @@ function VotingPanelInner({
                     game={g}
                     selected={selected}
                     disabled={alreadyVoted}
-                    showNew={false} // optionally wire group-newness later
-                    inPool={true}   // these are “in session”
+                    showNew={false}
+                    inPool={true}
+                    isMine={false}
                     onClick={() => {
                       if (alreadyVoted) return;
+                      if (disallowOwnSubmissionVote && id === mySubId) return; // hard block
                       setSelectedVoteId(id);
                     }}
                   />

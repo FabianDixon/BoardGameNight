@@ -93,12 +93,14 @@ export default function App() {
 
   const [myGroups, setMyGroups] = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState("");
+  const [members, setMembers] = useState([]);
 
   const [groupView, setGroupView] = useState("picker"); // "picker" | "detail"
   const [groupTab, setGroupTab] = useState("collection");
 
   const [groupGameRefs, setGroupGameRefs] = useState([]); // { id, ownersCount, updatedAt }
   const [groupWeightOverrides, setGroupWeightOverrides] = useState(null);
+  const [groupSettings, setGroupSettings] = useState(null);
 
   const [votes, setVotes] = useState([]);
 
@@ -287,6 +289,29 @@ export default function App() {
     });
   }, [currentGroupId]);
 
+  // --Suscribe to settings --
+  useEffect(() => {
+    if (!user || !currentGroupId) return;
+
+    const ref = doc(db, "groups", currentGroupId, "settings", "meta");
+    return onSnapshot(ref, (snap) => {
+      setGroupSettings(snap.exists() ? snap.data() : null);
+    });
+  }, [user, currentGroupId]);
+
+  // -- Group members --
+  useEffect(() => {
+    if (!user || !currentGroupId) {
+      setMembers([]);
+      return;
+    }
+
+    const ref = collection(db, "groups", currentGroupId, "members");
+    return onSnapshot(ref, (snap) => {
+      setMembers(snap.docs.map((d) => ({ userId: d.id, ...d.data() })));
+    });
+  }, [user, currentGroupId]);
+
   // --- Materialized group collection ---
   useEffect(() => {
     if (!currentGroupId) {
@@ -376,8 +401,8 @@ export default function App() {
   
       // Optional: sort, but don’t depend on the field existing
       docs.sort((a, b) => {
-        const ax = a.cycleStartedAt ?? Number.MAX_SAFE_INTEGER;
-        const bx = b.cycleStartedAt ?? Number.MAX_SAFE_INTEGER;
+        const ax = a.cycleStartedAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
+        const bx = b.cycleStartedAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
         return ax - bx;
       });
   
@@ -409,27 +434,25 @@ export default function App() {
   }, [currentGroupId, activeVote?.id, activeVote?.status]);
 
   useEffect(() => {
-    if (!user || !currentGroupId || !activeVote?.id) {
-      setMySubmissionGameId(null);
-      return;
-    }
-    if (activeVote.status !== "collecting") {
+    if (!user?.uid || !currentGroupId || !activeVote?.id) {
       setMySubmissionGameId(null);
       return;
     }
 
     const ref = doc(
       db,
-      "groups", currentGroupId,
-      "votes", activeVote.id,
+      "groups",
+      currentGroupId,
+      "votes",
+      activeVote.id,
       "submissions",
       user.uid
     );
 
     return onSnapshot(ref, (snap) => {
-      setMySubmissionGameId(snap.exists() ? snap.data().gameId : null);
+      setMySubmissionGameId(snap.exists() ? snap.data()?.gameId ?? null : null);
     });
-  }, [user, currentGroupId, activeVote?.id, activeVote?.status]);
+  }, [user?.uid, currentGroupId, activeVote?.id]);
 
   // --- My ratings ---
   useEffect(() => {
@@ -470,6 +493,12 @@ export default function App() {
       setSessionMeta(snap.exists() ? { id: snap.id, ...snap.data() } : null);
     });
   }, [currentGroupId]);
+
+  useEffect(() => {
+    if (!user || !profile?.nickname || myGroups.length === 0) return;
+    syncMyNicknameToGroupMemberships(profile.nickname).catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, profile?.nickname, myGroups.length]);
 
   // --- Derived views ---
   const selectedGameFresh = useMemo(() => {
@@ -525,48 +554,63 @@ export default function App() {
       .filter(Boolean);
   }, [currentGroupId, games, groupGameRefs, poolDocs]);
 
+  const myRole = useMemo(() => {
+    const me = members.find((m) => m.userId === user?.uid);
+    return me?.role || "member";
+  }, [members, user]);
+
+  const canEditWeights = useMemo(() => {
+    if (!user || !currentGroupId) return false;
+    if (currentGroup?.ownerId === user.uid) return true;
+    return myRole === "moderator" && groupSettings?.moderatorsCanEditWeights === true;
+  }, [user, currentGroupId, currentGroup, myRole, groupSettings]);
+
+  const canEditGroupMeta = useMemo(() => {
+    return !!user && currentGroup?.ownerId === user.uid;
+  }, [user, currentGroup]);
+
   const voteResults = useMemo(() => {
-  if (!activeVote || activeVote.status !== "closed") return [];
+    if (!activeVote || activeVote.status !== "closed") return [];
 
-  const gameMap = new Map(games.map((g) => [g.id, g]));
+    const gameMap = new Map(games.map((g) => [g.id, g]));
 
-  // Prefer authoritative scoreBreakdown stored on the vote doc
-  const breakdown = Array.isArray(activeVote.scoreBreakdown)
-    ? activeVote.scoreBreakdown
-    : null;
+    // Prefer authoritative scoreBreakdown stored on the vote doc
+    const breakdown = Array.isArray(activeVote.scoreBreakdown)
+      ? activeVote.scoreBreakdown
+      : null;
 
-  if (breakdown && breakdown.length > 0) {
-    return breakdown
-      .map((r) => ({
-        gameId: r.gameId,
-        title: gameMap.get(r.gameId)?.title || r.gameId,
-        // pickWeightedWinner should provide these; we keep them optional
-        score: Number(r.score ?? 0),
-        votes: Number(r.sessionVotes ?? r.votes ?? 0),
-        isWinner: activeVote.winnerGameId === r.gameId,
+    if (breakdown && breakdown.length > 0) {
+      return breakdown
+        .map((r) => ({
+          gameId: r.gameId,
+          title: gameMap.get(r.gameId)?.title || r.gameId,
+          // pickWeightedWinner should provide these; we keep them optional
+          score: Number(r.score ?? 0),
+          votes: Number(r.sessionVotes ?? r.votes ?? 0),
+          isWinner: activeVote.winnerGameId === r.gameId,
+        }))
+        .filter((r) => r.votes > 0 || r.score > 0)
+        .sort((a, b) => b.score - a.score);
+    }
+
+    // Fallback: count ballots (old votes)
+    const counts = new Map();
+    for (const b of voteBallots) {
+      if (!b.gameId) continue;
+      counts.set(b.gameId, (counts.get(b.gameId) || 0) + 1);
+    }
+
+    return [...counts.entries()]
+      .map(([gameId, votes]) => ({
+        gameId,
+        title: gameMap.get(gameId)?.title || gameId,
+        votes,
+        score: votes, // no weights available in old data
+        isWinner: activeVote.winnerGameId === gameId,
       }))
       .filter((r) => r.votes > 0 || r.score > 0)
       .sort((a, b) => b.score - a.score);
-  }
-
-  // Fallback: count ballots (old votes)
-  const counts = new Map();
-  for (const b of voteBallots) {
-    if (!b.gameId) continue;
-    counts.set(b.gameId, (counts.get(b.gameId) || 0) + 1);
-  }
-
-  return [...counts.entries()]
-    .map(([gameId, votes]) => ({
-      gameId,
-      title: gameMap.get(gameId)?.title || gameId,
-      votes,
-      score: votes, // no weights available in old data
-      isWinner: activeVote.winnerGameId === gameId,
-    }))
-    .filter((r) => r.votes > 0 || r.score > 0)
-    .sort((a, b) => b.score - a.score);
-}, [activeVote, voteBallots, games]);
+  }, [activeVote, voteBallots, games]);
 
   const poolActiveIds = useMemo(() => {
     return new Set(poolDocs.filter((p) => p.isActive).map((p) => p.id));
@@ -617,12 +661,33 @@ export default function App() {
     }
   }
 
+  async function syncMyNicknameToGroupMemberships(nextNickname) {
+    if (!user) return;
+    const nick = (nextNickname ?? profile?.nickname ?? "").trim();
+    if (!nick) return;
+
+    const batch = writeBatch(db);
+
+    for (const g of myGroups) {
+      batch.set(
+        doc(db, "groups", g.id, "members", user.uid),
+        { nickname: nick },
+        { merge: true }
+      );
+    }
+
+    await batch.commit();
+  }
+
   async function saveNickname() {
     if (!user) return;
     const trimmed = nickname.trim();
+
     await updateDoc(doc(db, "users", user.uid), { nickname: trimmed });
     setProfile((p) => ({ ...(p || {}), nickname: trimmed }));
     setNickname(trimmed);
+
+    await syncMyNicknameToGroupMemberships(trimmed);
   }
 
   function safeString(v) {
@@ -860,6 +925,30 @@ export default function App() {
     }
   }
 
+  // Bootstraps group settings doc so toggles/rules have a stable default.
+// Safe to call multiple times (merge=true).
+  async function bootstrapGroupMeta(groupId) {
+    if (!user) return;
+
+    const ref = doc(db, "groups", groupId, "settings", "meta");
+    await setDoc(
+      ref,
+      {
+        // Feature flags (defaults)
+        moderatorsCanEditWeights: false,
+        disallowVotingOwnSubmission: false,
+
+        // Optional: future flags you mentioned
+        // includeGamesByDefault: true,
+        // autoAdvanceWhenAllSubmitted: false,
+
+        createdAt: Date.now(),
+        createdBy: user.uid,
+      },
+      { merge: true }
+    );
+  }
+
   async function createGroup(name) {
     if (!user) {
       showToast("Signing in… try again in a second.", "info");
@@ -897,6 +986,8 @@ export default function App() {
         joinedAt: Date.now(),
         syncedCollectionAt: null,
       });
+
+      await bootstrapGroupMeta(groupRef.id);
   
       try {
         await syncMyCollectionToGroup(groupRef.id);
@@ -955,6 +1046,8 @@ export default function App() {
         joinedAt: Date.now(),
         syncedCollectionAt: null,
       }, { merge: true });
+
+      await bootstrapGroupMeta(groupRef.id);
 
       await syncMyCollectionToGroup(groupId);
 
@@ -1035,6 +1128,17 @@ export default function App() {
       showToast(e.code || e.message || "Failed to leave group.", "error");
       return false;
     }
+  }
+
+  async function saveGroupMeta(patch) {
+    if (!user || !currentGroupId) return;
+    if (currentGroup?.ownerId !== user.uid) {
+      showToast("Only the owner can edit group rules.", "error");
+      return;
+    }
+
+    await setDoc(doc(db, "groups", currentGroupId, "settings", "meta"), patch, { merge: true });
+    showToast("Group rules saved.", "success");
   }
 
   async function togglePlayedOverride(gameId, playedOverride) {
@@ -1365,13 +1469,19 @@ export default function App() {
 
   async function saveGroupWeights(overrides) {
     if (!user || !currentGroupId) return;
-    if (currentGroup?.ownerId !== user.uid) {
-      showToast("Only the group owner can edit settings.", "error");
+
+    if (!canEditWeights) {
+      showToast("Only the owner (or a moderator) can edit weights.", "error");
       return;
     }
+
     try {
-      await setDoc(doc(db, "groups", currentGroupId, "settings", "weights"), overrides, { merge: false });
-      showToast("Settings saved.", "success");
+      await setDoc(
+        doc(db, "groups", currentGroupId, "settings", "weights"),
+        overrides,
+        { merge: false }
+      );
+      showToast("Weight settings saved.", "success");
     } catch (e) {
       console.error("saveGroupWeights failed:", e);
       showToast(e.code || e.message || "Failed to save settings.", "error");
@@ -1380,18 +1490,48 @@ export default function App() {
 
   async function resetGroupWeightsInFirestore() {
     if (!user || !currentGroupId) return;
-    if (currentGroup?.ownerId !== user.uid) {
-      showToast("Only the group owner can edit settings.", "error");
+
+    if (!canEditWeights) {
+      showToast("Only the owner (or a moderator) can edit weights.", "error");
       return;
     }
+
     try {
       await deleteDoc(doc(db, "groups", currentGroupId, "settings", "weights"));
-      showToast("Overrides cleared.", "success");
+      showToast("Weight overrides cleared.", "success");
     } catch (e) {
       console.error("resetGroupWeightsInFirestore failed:", e);
       showToast(e.code || e.message || "Failed to clear overrides.", "error");
     }
   }
+
+  async function transferGroupOwnership(groupId, newOwnerUid) {
+    if (!user) return;
+
+    const groupRef = doc(db, "groups", groupId);
+    const oldOwnerUid = currentGroup?.ownerId;
+
+    await runTransaction(db, async (tx) => {
+      const g = await tx.get(groupRef);
+      if (!g.exists()) throw new Error("Group missing");
+      if (g.data().ownerId !== user.uid) throw new Error("Not owner");
+
+      // update group owner
+      tx.update(groupRef, { ownerId: newOwnerUid });
+
+      // swap roles
+      tx.update(doc(db, "groups", groupId, "members", newOwnerUid), { role: "owner" });
+      if (oldOwnerUid && oldOwnerUid !== newOwnerUid) {
+        tx.update(doc(db, "groups", groupId, "members", oldOwnerUid), { role: "member" });
+      }
+    });
+  }
+
+  async function setMemberRole(groupId, memberUid, role) {
+    if (!user) return;
+    await updateDoc(doc(db, "groups", groupId, "members", memberUid), { role });
+  }
+
   // ---- Expot Data -----
   async function buildSessionExportPayload(voteId) {
     const voteRef = doc(db, "groups", currentGroupId, "votes", voteId);
@@ -1717,6 +1857,7 @@ export default function App() {
                       <VotingPanel
                         user={user}
                         currentGroupId={currentGroupId}
+                        groupSettings={groupSettings}
                         groupGames={groupGames}
                         activeVote={activeVote}
                         mySubmissionGameId={mySubmissionGameId}
@@ -1740,10 +1881,23 @@ export default function App() {
                     onTogglePlayedOverride={togglePlayedOverride}
                     settingsNode={
                       <GroupSettingsPanel
-                        canEdit={user?.uid === currentGroup?.ownerId}
+                        group={currentGroup}
+                        user={user}
+                        members={members}
+                        myRole={myRole}
+                        meta={groupSettings}
+                        canEditMeta={canEditGroupMeta}
+                        canEditWeights={canEditWeights}
                         weights={groupWeightOverrides}
-                        onSave={saveGroupWeights}
-                        onReset={resetGroupWeightsInFirestore}
+                        onSaveWeights={saveGroupWeights}
+                        onResetWeights={resetGroupWeightsInFirestore}
+                        onSaveMeta={saveGroupMeta}
+                        onSetMemberRole={setMemberRole}
+                        onTransferOwnership={transferGroupOwnership}
+                        onInitMeta={async () => {
+                          await bootstrapGroupMeta(currentGroupId);
+                          showToast("Group settings initialized ✅", "success");
+                        }}
                       />
                     }
                   />

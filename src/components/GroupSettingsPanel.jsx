@@ -1,5 +1,5 @@
 // src/components/GroupSettingsPanel.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { DEFAULT_WEIGHTS } from "../weights/weighting";
 
 function toNumberOrEmpty(v) {
@@ -8,41 +8,315 @@ function toNumberOrEmpty(v) {
   return Number.isFinite(n) ? n : "";
 }
 
-function shallowEqual(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  const ak = Object.keys(a);
-  const bk = Object.keys(b);
-  if (ak.length !== bk.length) return false;
-  for (const k of ak) {
-    if (a[k] !== b[k]) return false;
-  }
-  return true;
+function safeRoleLabel(role) {
+  if (role === "owner") return "Owner";
+  if (role === "moderator") return "Moderator";
+  return "Member";
 }
 
-export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }) {
-  // Key off CONTENT, not object identity.
-  // This prevents resetting the form if parent re-renders with the same values.
-  const weightsKey = useMemo(() => JSON.stringify(weights || {}), [weights]);
+export default function GroupSettingsPanel({
+  group,
+  user,
+  members,
+  myRole,
 
-  const initial = useMemo(() => {
-    // Show defaults in UI but only save overrides
-    return { ...DEFAULT_WEIGHTS, ...(weights || {}) };
-  }, [weightsKey]);
+  // Settings docs
+  meta,
+  weights,
 
-  const [form, setForm] = useState(initial);
+  // Permissions
+  canEditMeta,
+  canEditWeights,
+
+  // Optional: if parent knows existence explicitly (recommended)
+  metaExists: metaExistsProp,
+  onInitMeta,
+
+  // Actions
+  onSaveWeights,
+  onResetWeights,
+  onSaveMeta,
+  onSetMemberRole,
+  onTransferOwnership,
+}) {
+  const isOwner = !!user && group?.ownerId === user.uid;
+
+  // Prefer explicit existence flag from parent if provided
+  const metaExists = metaExistsProp ?? !!meta;
+
+  const metaInitial = useMemo(
+    () => ({
+      disallowVotingOwnSubmission: meta?.disallowVotingOwnSubmission ?? false,
+      moderatorsCanEditWeights: meta?.moderatorsCanEditWeights ?? false,
+
+      // Optional/future (safe to keep; not used for auto-advance-by-participation)
+      collectingDurationMinutes: meta?.collectingDurationMinutes ?? 10,
+      votingDurationMinutes: meta?.votingDurationMinutes ?? 10,
+    }),
+    [meta]
+  );
+
+  const metaKey = useMemo(() => JSON.stringify(metaInitial), [metaInitial]);
+
+  const initialWeights = useMemo(
+    () => ({ ...DEFAULT_WEIGHTS, ...(weights || {}) }),
+    [weights]
+  );
+
+  const weightsKey = useMemo(
+    () => JSON.stringify(initialWeights),
+    [initialWeights]
+  );
+
+  const ownerOnlyMsg = useMemo(() => {
+    if (!user) return "Sign in to manage group settings.";
+    if (!group?.id) return "No group selected.";
+    if (!isOwner) return "Only the group owner can manage roles and group rules.";
+    return "";
+  }, [user, group, isOwner]);
+
+  const weightsEditMsg = useMemo(() => {
+    if (!user) return "Sign in to edit weight settings.";
+    if (!canEditWeights) return "Only the owner (or a moderator) can edit weight settings.";
+    return "";
+  }, [user, canEditWeights]);
+
+  return (
+    <div className="space-y-4">
+      <MetaSettingsSection
+        key={metaKey}
+        canEditMeta={canEditMeta}
+        ownerOnlyMsg={ownerOnlyMsg}
+        initial={metaInitial}
+        metaExists={metaExists}
+        onInitMeta={onInitMeta}
+        onSaveMeta={onSaveMeta}
+      />
+
+      <MembersSection
+        group={group}
+        user={user}
+        members={members}
+        isOwner={isOwner}
+        ownerOnlyMsg={ownerOnlyMsg}
+        onSetMemberRole={onSetMemberRole}
+        onTransferOwnership={onTransferOwnership}
+      />
+
+      <WeightsSection
+        key={weightsKey}
+        canEditWeights={canEditWeights}
+        weightsEditMsg={weightsEditMsg}
+        initial={initialWeights}
+        onSaveWeights={onSaveWeights}
+        onResetWeights={onResetWeights}
+      />
+
+      <div className="text-xs text-gray-500">
+        Your role:{" "}
+        <span className="font-mono">{safeRoleLabel(myRole || "member")}</span>
+      </div>
+    </div>
+  );
+}
+
+function MetaSettingsSection({
+  canEditMeta,
+  ownerOnlyMsg,
+  initial,
+  metaExists,
+  onInitMeta,
+  onSaveMeta,
+}) {
+  const [metaForm, setMetaForm] = useState(() => initial);
+  const [metaDirty, setMetaDirty] = useState(false);
+
+  function setMetaField(key, value) {
+    setMetaForm((prev) => ({ ...prev, [key]: value }));
+    setMetaDirty(true);
+  }
+
+  return (
+    <div className="bg-white p-4 rounded-2xl shadow border space-y-3">
+      <div>
+        <h3 className="text-xl font-semibold">Group rules</h3>
+        <p className="text-sm text-gray-600 mt-1">
+          Owner-controlled rules that affect session behavior.
+        </p>
+      </div>
+
+      {!canEditMeta && <div className="text-sm text-gray-600">{ownerOnlyMsg}</div>}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <SettingToggle
+          label="Disallow voting for your own submission"
+          help="If enabled, you cannot vote for the game you submitted in the collecting phase (current session only)."
+          checked={!!metaForm.disallowVotingOwnSubmission}
+          disabled={!canEditMeta}
+          onChange={(v) => setMetaField("disallowVotingOwnSubmission", v)}
+        />
+
+        <SettingToggle
+          label="Moderators can edit weights"
+          help="If enabled, members with the Moderator role can edit weight settings."
+          checked={!!metaForm.moderatorsCanEditWeights}
+          disabled={!canEditMeta}
+          onChange={(v) => setMetaField("moderatorsCanEditWeights", v)}
+        />
+
+        <SettingNumber
+          label="Collecting duration (minutes)"
+          help="Optional (for future timed mode). Not used for auto-advance-by-participation."
+          value={metaForm.collectingDurationMinutes}
+          step="1"
+          min="1"
+          max="180"
+          onChange={(v) =>
+            setMetaField("collectingDurationMinutes", v === "" ? "" : Number(v))
+          }
+          disabled={!canEditMeta}
+        />
+
+        <SettingNumber
+          label="Voting duration (minutes)"
+          help="Optional (for future timed mode). Not used for auto-advance-by-participation."
+          value={metaForm.votingDurationMinutes}
+          step="1"
+          min="1"
+          max="180"
+          onChange={(v) =>
+            setMetaField("votingDurationMinutes", v === "" ? "" : Number(v))
+          }
+          disabled={!canEditMeta}
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {!metaExists && canEditMeta && typeof onInitMeta === "function" && (
+          <button
+            type="button"
+            className="px-4 py-2 rounded border bg-yellow-50 hover:bg-yellow-100 text-sm"
+            onClick={onInitMeta}
+          >
+            Initialize group rules (create defaults)
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="px-4 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
+          disabled={!canEditMeta || !metaDirty || typeof onSaveMeta !== "function"}
+          onClick={() => {
+            onSaveMeta?.({
+              disallowVotingOwnSubmission: !!metaForm.disallowVotingOwnSubmission,
+              moderatorsCanEditWeights: !!metaForm.moderatorsCanEditWeights,
+              collectingDurationMinutes: Number(metaForm.collectingDurationMinutes) || 10,
+              votingDurationMinutes: Number(metaForm.votingDurationMinutes) || 10,
+              updatedAt: Date.now(),
+            });
+            setMetaDirty(false);
+          }}
+          title={
+            typeof onSaveMeta !== "function"
+              ? "Wire onSaveMeta from App.jsx to enable saving."
+              : ""
+          }
+        >
+          Save group rules
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MembersSection({
+  group,
+  user,
+  members,
+  isOwner,
+  ownerOnlyMsg,
+  onSetMemberRole,
+  onTransferOwnership,
+}) {
+  return (
+    <div className="bg-white p-4 rounded-2xl shadow border space-y-3">
+      <div>
+        <h3 className="text-xl font-semibold">Members</h3>
+        <p className="text-sm text-gray-600 mt-1">
+          Roles: <span className="font-medium">Owner</span>,{" "}
+          <span className="font-medium">Member</span>,{" "}
+          <span className="font-medium">Moderator</span> (weights only).
+        </p>
+      </div>
+
+      {!isOwner && <div className="text-sm text-gray-600">{ownerOnlyMsg}</div>}
+
+      <div className="space-y-2">
+        {members?.length ? (
+          members.map((m) => {
+            const isMe = m.userId === user?.uid;
+            const role = m.role || (m.userId === group?.ownerId ? "owner" : "member");
+            const display = m.nickname || (isMe ? "You" : m.userId);
+
+            return (
+              <div
+                key={m.userId}
+                className="flex flex-wrap items-center justify-between gap-2 border rounded-xl p-3 bg-gray-50"
+              >
+                <div className="min-w-0">
+                  <div className="font-semibold text-sm truncate">{display}</div>
+                  <div className="text-xs text-gray-600">
+                    {safeRoleLabel(role)} {isMe ? "• (you)" : ""}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    className="border rounded px-2 py-1 text-sm bg-white disabled:bg-gray-100"
+                    disabled={!isOwner || role === "owner"}
+                    value={role === "owner" ? "owner" : role}
+                    onChange={(e) => {
+                      onSetMemberRole?.(group.id, m.userId, e.target.value);
+                    }}
+                    title={!isOwner ? "Only owner can change roles" : ""}
+                  >
+                    <option value="owner" disabled>
+                      Owner
+                    </option>
+                    <option value="member">Member</option>
+                    <option value="moderator">Moderator</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    className="px-3 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50 text-sm"
+                    disabled={!isOwner || m.userId === group?.ownerId}
+                    onClick={() => onTransferOwnership?.(group.id, m.userId)}
+                    title={!isOwner ? "Only owner can transfer ownership" : ""}
+                  >
+                    Transfer ownership
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className="text-sm text-gray-600">Loading members…</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WeightsSection({
+  canEditWeights,
+  weightsEditMsg,
+  initial,
+  onSaveWeights,
+  onResetWeights,
+}) {
+  const [form, setForm] = useState(() => initial);
   const [dirty, setDirty] = useState(false);
-
-  // Avoid repeated "apply props -> state" loops
-  const lastAppliedKey = useRef(null);
-
-  useEffect(() => {
-    if (lastAppliedKey.current === weightsKey) return;
-    lastAppliedKey.current = weightsKey;
-
-    setForm((prev) => (shallowEqual(prev, initial) ? prev : initial));
-    setDirty(false);
-  }, [weightsKey, initial]);
 
   function setField(key, value) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -50,9 +324,9 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
   }
 
   function buildOverrides() {
-    // Store only values that differ from DEFAULT_WEIGHTS
     const overrides = {};
     for (const [k, v] of Object.entries(form)) {
+      if (v === "") continue;
       const n = Number(v);
       if (!Number.isFinite(n)) continue;
       if (DEFAULT_WEIGHTS[k] !== n) overrides[k] = n;
@@ -65,17 +339,12 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
       <div>
         <h3 className="text-xl font-semibold">Weight settings</h3>
         <p className="text-sm text-gray-600 mt-1">
-          These weights affect the winner score as:{" "}
-          <span className="font-mono">effectiveScore = sessionVotes × multiplier</span>.
-          Only games with votes can win.
+          These weights affect the winner score as{" "}
+          <span className="font-mono">effectiveScore = sessionVotes × multiplier</span>. Only games with votes can win.
         </p>
       </div>
 
-      {!canEdit && (
-        <div className="text-sm text-gray-600">
-          Only the group owner can edit settings.
-        </div>
-      )}
+      {!canEditWeights && <div className="text-sm text-gray-600">{weightsEditMsg}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <SettingNumber
@@ -86,31 +355,28 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
           min="0"
           max="5"
           onChange={(v) => setField("wNewGame", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
-
         <SettingNumber
           label="Age per session (wAgeSessions)"
-          help="wAgeSessions x (sessionIndex - cycleStartedSession)."
+          help="wAgeSessions × (sessionIndex - cycleStartedSession)."
           value={form.wAgeSessions}
           step="0.05"
           min="0"
           max="5"
           onChange={(v) => setField("wAgeSessions", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
-
         <SettingNumber
           label="Cycle votes strength (wCycleVotes)"
-          help="wCycleVotes x cycleVoteCount."
+          help="wCycleVotes × cycleVoteCount."
           value={form.wCycleVotes}
           step="0.01"
           min="0"
           max="5"
           onChange={(v) => setField("wCycleVotes", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
-
         <SettingNumber
           label="Recent win penalty (wRecentWinPenalty)"
           help="Penalty applied if won within recentWinSessions."
@@ -119,9 +385,8 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
           min="0"
           max="5"
           onChange={(v) => setField("wRecentWinPenalty", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
-
         <SettingNumber
           label="Recent win window (recentWinSessions)"
           help="Number of sessions considered 'recent'."
@@ -130,9 +395,8 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
           min="0"
           max="50"
           onChange={(v) => setField("recentWinSessions", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
-
         <SettingNumber
           label="Min multiplier (minMultiplier)"
           help="Clamp lower bound."
@@ -141,9 +405,8 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
           min="0"
           max="10"
           onChange={(v) => setField("minMultiplier", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
-
         <SettingNumber
           label="Max multiplier (maxMultiplier)"
           help="Clamp upper bound."
@@ -152,7 +415,7 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
           min="0.1"
           max="50"
           onChange={(v) => setField("maxMultiplier", v)}
-          disabled={!canEdit}
+          disabled={!canEditWeights}
         />
       </div>
 
@@ -160,7 +423,7 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
         <button
           type="button"
           className="px-4 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
-          disabled={!canEdit}
+          disabled={!canEditWeights}
           onClick={() => {
             setForm({ ...DEFAULT_WEIGHTS });
             setDirty(true);
@@ -172,8 +435,8 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
         <button
           type="button"
           className="px-4 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
-          disabled={!canEdit}
-          onClick={onReset}
+          disabled={!canEditWeights}
+          onClick={() => onResetWeights?.()}
           title="Deletes overrides in Firestore"
         >
           Clear overrides (Firestore)
@@ -182,10 +445,10 @@ export default function GroupSettingsPanel({ canEdit, weights, onSave, onReset }
         <button
           type="button"
           className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-          disabled={!canEdit || !dirty}
-          onClick={() => onSave(buildOverrides())}
+          disabled={!canEditWeights || !dirty}
+          onClick={() => onSaveWeights?.(buildOverrides())}
         >
-          Save settings
+          Save weights
         </button>
       </div>
     </div>
@@ -207,6 +470,48 @@ function SettingNumber({ label, help, value, onChange, step, min, max, disabled 
         disabled={disabled}
         onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
       />
+    </div>
+  );
+}
+
+function SettingToggle({ label, help, checked, disabled, onChange }) {
+  return (
+    <div className="border rounded-xl p-3 bg-gray-50">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-semibold text-sm">{label}</div>
+          <div className="text-xs text-gray-600 mt-1">{help}</div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {/* Optional but very clear: text cue */}
+          <span className="text-xs text-gray-600 w-8 text-right">
+            {checked ? "On" : "Off"}
+          </span>
+
+          <button
+            type="button"
+            className={[
+              "w-12 h-7 rounded-full transition border flex items-center",
+              checked
+                ? "bg-blue-600 border-blue-600 justify-end"
+                : "bg-gray-200 border-gray-300 justify-start",
+              disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+            ].join(" ")}
+            disabled={disabled}
+            onClick={() => onChange(!checked)}
+            aria-pressed={checked}
+            aria-label={label}
+          >
+            <span
+              className={[
+                "w-5 h-5 rounded-full shadow mx-1 transition",
+                checked ? "bg-white" : "bg-white",
+              ].join(" ")}
+            />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
