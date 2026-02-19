@@ -250,21 +250,6 @@ function VotingPanelInner({
     <div className="space-y-4">
       <div className="bg-white rounded-2xl shadow border p-4">
         <h2 className="text-2xl font-bold">Session</h2>
-        <div className="mt-3 text-xs font-mono text-gray-600 whitespace-pre-wrap">
-          {JSON.stringify(
-            {
-              status,
-              disallow: !!groupSettings?.disallowVotingOwnSubmission,
-              mySubmissionGameId,
-              mySubId,
-              activeVoteId: activeVote?.id,
-              candidatesCount: candidateIdsNormalized.length,
-              candidatesHead: candidateIdsNormalized.slice(0, 5),
-            },
-            null,
-            2
-          )}
-        </div>
         <div className="mt-2 text-sm text-gray-700">
           Active:{" "}
           <span className="font-semibold">
