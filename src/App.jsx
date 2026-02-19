@@ -124,7 +124,7 @@ export default function App() {
 
   const [myRatings, setMyRatings] = useState(new Map());
 
-  const [toast, setToast] = useState(null);
+  const [toasts, setToasts] = useState([]);
 
   const [isEditGameOpen, setIsEditGameOpen] = useState(false);
   const [editGameForm, setEditGameForm] = useState({
@@ -401,8 +401,8 @@ export default function App() {
   
       // Optional: sort, but don’t depend on the field existing
       docs.sort((a, b) => {
-        const ax = a.cycleStartedAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
-        const bx = b.cycleStartedAt?.toMillis?.() ?? Number.MAX_SAFE_INTEGER;
+        const ax = typeof a.cycleStartedAt === "number" ? a.cycleStartedAt : Number.MAX_SAFE_INTEGER;
+        const bx = typeof b.cycleStartedAt === "number" ? b.cycleStartedAt : Number.MAX_SAFE_INTEGER;
         return ax - bx;
       });
   
@@ -636,9 +636,19 @@ export default function App() {
 
   // --- Actions ---
   const showToast = useCallback((message, type = "info", title = "") => {
-    setToast({ message, type, title, id: Date.now() });
-    window.clearTimeout(showToast._t);
-    showToast._t = window.setTimeout(() => setToast(null), 2500);
+    const id =
+      (typeof crypto !== "undefined" && crypto.randomUUID && crypto.randomUUID()) ||
+      String(Date.now() + Math.random());
+
+    setToasts((prev) => [...prev, { id, type, title, message }]);
+
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3500);
+  }, []);
+
+  const closeToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   function openEditGame(game) {
@@ -1408,6 +1418,7 @@ export default function App() {
 
       // Activate/reactivate pool entry (this is what makes it disappear for everyone)
       if (!poolSnap.exists()) {
+        // true create path (allowed to include addedAt)
         tx.set(poolRef, {
           isActive: true,
           addedAt: now,
@@ -1416,13 +1427,17 @@ export default function App() {
           cycleStartedSession: sessionIndex,
         });
       } else {
-        // During collecting, rules only allow these fields to change
-        tx.update(poolRef, {
-          isActive: true,
-          cycleStartedAt: now,
-          cycleVoteCount: 0,
-          cycleStartedSession: sessionIndex,
-        });
+        // update path + repair empty docs
+        tx.set(
+          poolRef,
+          {
+            isActive: true,
+            cycleStartedAt: now,
+            cycleVoteCount: 0,
+            cycleStartedSession: sessionIndex,
+          },
+          { merge: true }
+        );
       }
     });
 
@@ -2058,7 +2073,7 @@ export default function App() {
         })()}
       </Modal>
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+      <Toast toasts={toasts} onClose={closeToast} />
     </div>
   );
 }
