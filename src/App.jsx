@@ -1372,62 +1372,73 @@ export default function App() {
   }
 
   async function submitToSession(gameId) {
-  if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+    if (!user || !currentGroupId || !activeVote?.id) return;
 
-  if (activeVote.status !== "collecting") {
-    showToast("Submissions are closed.", "error");
-    return;
-  }
+    const gid = String(gameId || "").trim();
+    if (!gid) {
+      showToast("Pick a game first.", "error");
+      return;
+    }
 
-  const now = Date.now();
+    if (activeVote.status !== "collecting") {
+      showToast("Submissions are closed.", "error");
+      return;
+    }
 
-  const submissionRef = doc(
-    db,
-    "groups",
-    currentGroupId,
-    "votes",
-    activeVote.id,
-    "submissions",
-    user.uid
-  );
+    const now = Date.now();
 
-  const poolRef = doc(db, "groups", currentGroupId, "pool", gameId);
+    const submissionRef = doc(
+      db,
+      "groups",
+      currentGroupId,
+      "votes",
+      activeVote.id,
+      "submissions",
+      user.uid
+    );
 
-  try {
-    await runTransaction(db, async (tx) => {
-      const [subSnap, poolSnap] = await Promise.all([
-        tx.get(submissionRef),
-        tx.get(poolRef),
-      ]);
+    const poolRef = doc(db, "groups", currentGroupId, "pool", gid);
 
-      // Enforce: 1 submission per user per collecting phase
-      if (subSnap.exists()) {
-        throw new Error("You already submitted a game for this session.");
-      }
+    const voteRef = doc(db, "groups", currentGroupId, "votes", activeVote.id);
+    const metaRef = doc(db, "groups", currentGroupId, "activeSession", "meta");
 
-      // Enforce: cannot submit a game already active in the pool
-      if (poolSnap.exists() && poolSnap.data()?.isActive === true) {
-        throw new Error("That game is already in the pool.");
-      }
+    try {
+      await runTransaction(db, async (tx) => {
+        const [voteSnap, metaSnap, subSnap, poolSnap] = await Promise.all([
+          tx.get(voteRef),
+          tx.get(metaRef),
+          tx.get(submissionRef),
+          tx.get(poolRef),
+        ]);
 
-      // Write submission (one doc per user)
-      tx.set(submissionRef, {
-        gameId,
-        submittedAt: now,
-      });
+        // Must be collecting (server truth)
+        const voteStatus = voteSnap.exists() ? voteSnap.data()?.status : null;
+        if (voteStatus !== "collecting") {
+          throw new Error("NOT_COLLECTING");
+        }
 
-      // Activate/reactivate pool entry (this is what makes it disappear for everyone)
-      if (!poolSnap.exists()) {
-        // true create path (allowed to include addedAt)
-        tx.set(poolRef, {
-          isActive: true,
-          addedAt: now,
-          cycleStartedAt: now,
-          cycleVoteCount: 0,
-          cycleStartedSession: sessionIndex,
-        });
-      } else {
-        // update path + repair empty docs
+        const metaStatus = metaSnap.exists() ? metaSnap.data()?.status : null;
+        if (metaStatus && metaStatus !== "collecting") {
+          throw new Error("NOT_COLLECTING");
+        }
+
+        // One submission per user per session
+        if (subSnap.exists()) {
+          throw new Error("ALREADY_SUBMITTED");
+        }
+
+        // Don’t allow selecting a game already active in pool
+        const poolData = poolSnap.exists() ? (poolSnap.data() || {}) : null;
+        if (poolData?.isActive === true) {
+          throw new Error("ALREADY_IN_POOL");
+        }
+
+        // Write submission
+        tx.set(submissionRef, { gameId: gid, submittedAt: now }, { merge: false });
+
+        // Activate / repair pool doc
+        const needsAddedAt = !poolSnap.exists() || poolData?.addedAt == null;
+
         tx.set(
           poolRef,
           {
@@ -1435,18 +1446,31 @@ export default function App() {
             cycleStartedAt: now,
             cycleVoteCount: 0,
             cycleStartedSession: sessionIndex,
+            ...(needsAddedAt ? { addedAt: now } : {}),
           },
           { merge: true }
         );
-      }
-    });
+      });
 
-    showToast("Submitted ✅", "success");
-  } catch (e) {
-    console.error("submitToSession failed:", e);
-    showToast(e?.message || e?.code || "Submission failed.", "error");
+      showToast("Game submitted ✅", "success");
+    } catch (e) {
+      console.error("submitToSession failed:", e);
+
+      // Friendly messages for our intentional throws
+      const msg =
+        e?.message === "ALREADY_SUBMITTED"
+          ? "You already submitted a game for this session."
+          : e?.message === "ALREADY_IN_POOL"
+          ? "That game is already active in the pool."
+          : e?.message === "NOT_COLLECTING"
+          ? "Submissions are closed."
+          : e?.code === "permission-denied"
+          ? "Missing or insufficient permissions."
+          : e?.message || "Failed to submit game.";
+
+      showToast(msg, "error");
+    }
   }
-}
 
   async function startVoting() {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;

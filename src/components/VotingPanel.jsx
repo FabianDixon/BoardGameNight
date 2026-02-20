@@ -188,7 +188,7 @@ function VotingPanelInner({
   const canSubmit = !!user && !!currentGroupId && status === "collecting";
   const canVote = !!user && !!currentGroupId && status === "open";
 
-  const alreadySubmitted = !!mySubmissionGameId;
+  const alreadySubmitted = !!mySubId;
   const alreadyVoted = !!myBallot?.gameId;
 
   const disallowOwnSubmissionVote =
@@ -319,7 +319,7 @@ function VotingPanelInner({
           <div className="mt-4 text-sm text-gray-700">
             Your submission:{" "}
             <span className="font-semibold">
-              {mySubmissionGameId ? titleById(gameMap, mySubmissionGameId) : "—"}
+              {mySubId ? titleById(gameMap, mySubId) : "—"}
             </span>
           </div>
         )}
