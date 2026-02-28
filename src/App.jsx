@@ -1059,7 +1059,7 @@ export default function App() {
 
       await bootstrapGroupMeta(groupRef.id);
 
-      await syncMyCollectionToGroup(groupId);
+      await syncMyCollectionToGroup(id);
 
       showToast("Joined group ✅", "success");
       return true;
@@ -2014,7 +2014,8 @@ export default function App() {
           onRate={(value) => rateGame(selectedGameFresh.id, value)}
           onAdd={() => addToCollection(selectedGameFresh.id)}
           onRemove={() => removeFromCollection(selectedGameFresh.id)}
-          canEdit={user?.uid && selectedGameFresh.createdBy === user.uid}
+          // canEdit={user?.uid && selectedGameFresh.createdBy === user.uid}
+          canEdit={!!user}
           onEdit={() => openEditGame(selectedGameFresh)}
         />
       )}
