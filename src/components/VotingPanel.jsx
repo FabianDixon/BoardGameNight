@@ -66,6 +66,11 @@ function formatScore(n) {
   return x.toFixed(2);
 }
 
+function formatProgress(x, n) {
+  if (!n) return "—";
+  return `${Math.min(x || 0, n)} / ${n}`;
+}
+
 function titleById(gameMap, id) {
   return gameMap.get(id)?.title || id;
 }
@@ -95,6 +100,10 @@ function VotingPanelInner({
   canEmailSession,
   canManageSession,
   canCloseActiveVote,
+
+  groupMemberCount = 0,
+  submissionsCount = 0,
+  ballotsCount = 0,
 }) {
   const gameMap = useMemo(
     () => new Map((groupGames || []).map((g) => [g.id, g])),
@@ -256,6 +265,38 @@ function VotingPanelInner({
             {activeVote ? `Session (${activeVote.status || "?"})` : "—"}
           </span>
         </div>
+
+        {activeVote?.status === "collecting" && (
+          <div className="mt-2 flex flex-wrap gap-2 text-sm">
+            <span className="px-2 py-1 rounded-full border bg-gray-50">
+              Submissions: <span className="font-semibold tabular-nums">
+                {formatProgress(submissionsCount, groupMemberCount)}
+              </span>
+            </span>
+
+            {alreadySubmitted && (
+              <span className="px-2 py-1 rounded-full border bg-green-50 text-green-800">
+                ✅ Submitted
+              </span>
+            )}
+          </div>
+        )}
+
+        {activeVote?.status === "open" && (
+          <div className="mt-2 flex flex-wrap gap-2 text-sm">
+            <span className="px-2 py-1 rounded-full border bg-gray-50">
+              Votes: <span className="font-semibold tabular-nums">
+                {formatProgress(ballotsCount, groupMemberCount)}
+              </span>
+            </span>
+
+            {alreadyVoted && (
+              <span className="px-2 py-1 rounded-full border bg-green-50 text-green-800">
+                ✅ Voted
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="mt-3 flex flex-wrap gap-2">
           {!activeVote && (

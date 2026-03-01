@@ -1,5 +1,5 @@
 // src/App.jsx
-import { useEffect, useMemo, useState, useCallback} from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   addDoc,
   collection,
@@ -135,6 +135,8 @@ export default function App() {
   });
 
   const [returnCtx, setReturnCtx] = useState(null);
+
+  const [groupAccessReady, setGroupAccessReady] = useState(false);
 
   const currentGroup = useMemo(
     () => myGroups.find((g) => g.id === currentGroupId) || null,
@@ -279,7 +281,7 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (!currentGroupId) {
+    if (!currentGroupId || !groupAccessReady) {
       setGroupWeightOverrides(null);
       return;
     }
@@ -287,21 +289,24 @@ export default function App() {
     return onSnapshot(ref, (snap) => {
       setGroupWeightOverrides(snap.exists() ? snap.data() : null);
     });
-  }, [currentGroupId]);
+  }, [currentGroupId, groupAccessReady]);
 
   // --Suscribe to settings --
   useEffect(() => {
-    if (!user || !currentGroupId) return;
+    if (!user || !currentGroupId || !groupAccessReady) {
+      setGroupSettings(null);
+      return;
+    }
 
     const ref = doc(db, "groups", currentGroupId, "settings", "meta");
     return onSnapshot(ref, (snap) => {
       setGroupSettings(snap.exists() ? snap.data() : null);
     });
-  }, [user, currentGroupId]);
+  }, [user, currentGroupId, groupAccessReady]);
 
   // -- Group members --
   useEffect(() => {
-    if (!user || !currentGroupId) {
+    if (!user || !currentGroupId || !groupAccessReady) {
       setMembers([]);
       return;
     }
@@ -310,11 +315,11 @@ export default function App() {
     return onSnapshot(ref, (snap) => {
       setMembers(snap.docs.map((d) => ({ userId: d.id, ...d.data() })));
     });
-  }, [user, currentGroupId]);
+  }, [user, currentGroupId, groupAccessReady]);
 
   // --- Materialized group collection ---
   useEffect(() => {
-    if (!currentGroupId) {
+    if (!currentGroupId || !groupAccessReady) {
       setGroupGameRefs([]);
       return;
     }
@@ -329,10 +334,10 @@ export default function App() {
     });
 
     return unsub;
-  }, [currentGroupId]);
+  }, [currentGroupId, groupAccessReady]);
 
   useEffect(() => {
-    if (!currentGroupId) {
+    if (!currentGroupId || !groupAccessReady) {
       setVotes([]);
       return;
     }
@@ -345,11 +350,11 @@ export default function App() {
     return onSnapshot(ref, (snap) => {
       setVotes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
-  }, [currentGroupId]);
+  }, [currentGroupId, groupAccessReady]);
 
   // --- Ballots for active vote ---
   useEffect(() => {
-    if (!user || !currentGroupId || !activeVote?.id) {
+    if (!user || !currentGroupId || !activeVote?.id || !groupAccessReady) {
       setMyBallot(null);
       setVoteBallots([]);
       return;
@@ -386,10 +391,10 @@ export default function App() {
       unsubMy();
       unsubAll();
     };
-  }, [user, currentGroupId, activeVote?.id]);
+  }, [user, currentGroupId, activeVote?.id, groupAccessReady]);
 
   useEffect(() => {
-    if (!currentGroupId) {
+    if (!currentGroupId || !groupAccessReady) {
       setPoolDocs([]);
       return;
     }
@@ -408,11 +413,11 @@ export default function App() {
   
       setPoolDocs(docs);
     });
-  }, [currentGroupId]);
+  }, [currentGroupId, groupAccessReady]);
 
     // --- All submissions for active vote (collecting phase) ---
   useEffect(() => {
-    if (!currentGroupId || !activeVote?.id || activeVote?.status !== "collecting") {
+    if (!currentGroupId || !activeVote?.id || activeVote?.status !== "collecting" || !groupAccessReady) {
       setSessionSubmissions([]);
       return;
     }
@@ -431,10 +436,10 @@ export default function App() {
         snap.docs.map((d) => ({ userId: d.id, ...d.data() }))
       );
     });
-  }, [currentGroupId, activeVote?.id, activeVote?.status]);
+  }, [currentGroupId, activeVote?.id, activeVote?.status, groupAccessReady]);
 
   useEffect(() => {
-    if (!user?.uid || !currentGroupId || !activeVote?.id) {
+    if (!user?.uid || !currentGroupId || !activeVote?.id || !groupAccessReady) {
       setMySubmissionGameId(null);
       return;
     }
@@ -452,7 +457,7 @@ export default function App() {
     return onSnapshot(ref, (snap) => {
       setMySubmissionGameId(snap.exists() ? snap.data()?.gameId ?? null : null);
     });
-  }, [user?.uid, currentGroupId, activeVote?.id]);
+  }, [user?.uid, currentGroupId, activeVote?.id, groupAccessReady]);
 
   // --- My ratings ---
   useEffect(() => {
@@ -483,7 +488,7 @@ export default function App() {
   }, [activeTab, groupView, currentGroupId]);
 
   useEffect(() => {
-    if (!currentGroupId) {
+    if (!currentGroupId || !groupAccessReady) {
       setSessionMeta(null);
       return;
     }
@@ -492,13 +497,44 @@ export default function App() {
     return onSnapshot(ref, (snap) => {
       setSessionMeta(snap.exists() ? { id: snap.id, ...snap.data() } : null);
     });
-  }, [currentGroupId]);
+  }, [currentGroupId, groupAccessReady]);
 
   useEffect(() => {
     if (!user || !profile?.nickname || myGroups.length === 0) return;
     syncMyNicknameToGroupMemberships(profile.nickname).catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, profile?.nickname, myGroups.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkAccess() {
+      if (!user?.uid || !currentGroupId) {
+        setGroupAccessReady(false);
+        return;
+      }
+
+      setGroupAccessReady(false);
+
+      try {
+        const memberRef = doc(db, "groups", currentGroupId, "members", user.uid);
+        await waitForServerDoc(memberRef, { timeoutMs: 4000, intervalMs: 200 });
+
+        if (!cancelled) setGroupAccessReady(true);
+      } catch (e) {
+        console.warn("groupAccessReady: membership not visible yet", e);
+        if (!cancelled) setGroupAccessReady(false);
+      }
+    }
+
+    checkAccess();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, currentGroupId]);
+
+  const autoStartRef = useRef({ voteId: null });
+  const autoCloseRef = useRef({ voteId: null });
 
   // --- Derived views ---
   const selectedGameFresh = useMemo(() => {
@@ -634,6 +670,28 @@ export default function App() {
     return !!user.email; // linked email account
   }, [user]);
 
+  const groupMemberCount = useMemo(() => {
+    // members array is your group membership docs
+    return Array.isArray(members) ? members.length : 0;
+  }, [members]);
+
+  const submissionsCount = useMemo(() => {
+    // unique users that submitted
+    const uids = new Set(sessionSubmissions.map((s) => s.userId).filter(Boolean));
+    return uids.size;
+  }, [sessionSubmissions]);
+
+  const ballotsCount = useMemo(() => {
+    // unique users that voted
+    const uids = new Set(voteBallots.map((b) => b.userId).filter(Boolean));
+    return uids.size;
+  }, [voteBallots]);
+
+  const sessionIndex = useMemo(
+    () => Number(sessionMeta?.sessionIndex || 0),
+    [sessionMeta?.sessionIndex]
+  );
+
   // --- Actions ---
   const showToast = useCallback((message, type = "info", title = "") => {
     const id =
@@ -669,6 +727,20 @@ export default function App() {
     } catch {
       return false;
     }
+  }
+
+  async function waitForServerDoc(ref, { timeoutMs = 2500, intervalMs = 150 } = {}) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const snap = await getDocFromServer(ref);
+        if (snap.exists()) return snap;
+      } catch {
+        // if we’re offline or transient, just keep retrying until timeout
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    throw new Error("MEMBERSHIP_NOT_VISIBLE_YET");
   }
 
   async function syncMyNicknameToGroupMemberships(nextNickname) {
@@ -950,7 +1022,10 @@ export default function App() {
 
         // Optional: future flags you mentioned
         // includeGamesByDefault: true,
-        // autoAdvanceWhenAllSubmitted: false,
+
+        // auto-advance flags (defaults off)
+        autoAdvanceWhenAllSubmitted: false,
+        autoAdvanceWhenAllVoted: false,
 
         createdAt: Date.now(),
         createdBy: user.uid,
@@ -1052,14 +1127,21 @@ export default function App() {
         nickname: profile?.nickname || "",
       });
 
+      await waitForServerDoc(memberRef);
+
       await setDoc(doc(db, "users", user.uid, "groups", id), {
         joinedAt: Date.now(),
         syncedCollectionAt: null,
       }, { merge: true });
 
-      await bootstrapGroupMeta(groupRef.id);
+      // await bootstrapGroupMeta(groupRef.id);
 
-      await syncMyCollectionToGroup(id);
+      try {
+        await syncMyCollectionToGroup(id);
+      } catch (e) {
+        console.error("syncMyCollectionToGroup failed after join:", e);
+        showToast("Joined, but collection sync failed.", "info");
+      }
 
       showToast("Joined group ✅", "success");
       return true;
@@ -1200,11 +1282,12 @@ export default function App() {
     showToast("Vote submitted ✅", "success");
   }
 
-  async function closeVote() {
+  const closeVote = useCallback(async (opts = {}) => {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
     if (activeVote.status !== "open") return;
 
-    if (!canCloseActiveVote) {
+    // ✅ only block manual calls; allow auto calls
+    if (!opts.auto && !canCloseActiveVote) {
       showToast("Only the session owner (or group owner) can close.", "error");
       return;
     }
@@ -1334,7 +1417,16 @@ export default function App() {
       console.error("closeVote failed:", e);
       showToast(e.code || e.message || "Failed to close vote.", "error");
     }
-  }
+  }, [
+    user,
+    currentGroupId,
+    activeVote,
+    canCloseActiveVote,
+    poolDocs,
+    effectiveWeights,
+    sessionIndex,
+    showToast,
+  ]);
 
   async function callSession() {
     if (!user || !currentGroupId) return;
@@ -1472,39 +1564,109 @@ export default function App() {
     }
   }
 
-  async function startVoting() {
-    if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+  const startVoting = useCallback(
+    async ({ allowMember = false, silent = false } = {}) => {
+      if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+      if (activeVote.status !== "collecting") return;
+
+      const isVoteOwner = activeVote.createdBy === user.uid;
+      const isGroupOwner = currentGroup?.ownerId === user.uid;
+
+      // UI still blocks, but auto-advance can bypass
+      if (!allowMember && !isVoteOwner && !isGroupOwner) {
+        if (!silent) showToast("Only the session owner can start voting.", "error");
+        return;
+      }
+
+      const subsSnap = await getDocs(
+        collection(db, "groups", currentGroupId, "votes", activeVote.id, "submissions")
+      );
+
+      const submittedIds = subsSnap.docs.map((d) => d.data().gameId).filter(Boolean);
+      const candidates = Array.from(new Set([...activePoolGameIds, ...submittedIds]));
+
+      await updateDoc(doc(db, "groups", currentGroupId, "votes", activeVote.id), {
+        status: "open",
+        openedAt: Date.now(),
+        candidates,
+      });
+
+      await updateDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"), {
+        status: "open",
+        updatedAt: Date.now(),
+      });
+
+      if (!silent) showToast("Voting is open 🎲", "success");
+    },
+    [user, currentGroupId, activeVote, currentGroup, activePoolGameIds, showToast]
+  );
+
+  // ✅ Auto: collecting -> open when everyone submitted
+  useEffect(() => {
+    if (!currentGroupId) return;
+    if (!activeVote?.id) return;
+
+    // must be collecting
     if (activeVote.status !== "collecting") return;
 
-    const isVoteOwner = activeVote.createdBy === user.uid;
-    const isGroupOwner = currentGroup?.ownerId === user.uid;
-    if (!isVoteOwner && !isGroupOwner) {
-      showToast("Only the session owner can start voting.", "error");
-      return;
+    // feature flag must be enabled
+    if (groupSettings?.autoAdvanceWhenAllSubmitted !== true) return;
+
+    // need a stable member count
+    if (!groupMemberCount || groupMemberCount <= 0) return;
+
+    // prevent repeated firing for same vote
+    if (autoStartRef.current.voteId === activeVote.id) return;
+
+    if (submissionsCount >= groupMemberCount) {
+      autoStartRef.current.voteId = activeVote.id;
+      // call the same function the button calls
+      startVoting({ allowMember: true, silent: true }).catch((e) => {
+        console.error("Auto startVoting failed:", e);
+        autoStartRef.current.voteId = null;
+      });
     }
+  }, [
+    currentGroupId,
+    activeVote?.id,
+    activeVote?.status,
+    groupSettings?.autoAdvanceWhenAllSubmitted,
+    submissionsCount,
+    groupMemberCount,
+    startVoting,
+  ]);
 
-    const subsSnap = await getDocs(
-      collection(db, "groups", currentGroupId, "votes", activeVote?.id, "submissions")
-    );
+  // ✅ Auto: open -> closed when everyone voted
+  useEffect(() => {
+    if (!currentGroupId) return;
+    if (!activeVote?.id) return;
 
-    const submittedIds = subsSnap.docs.map(d => d.data().gameId);
+    // must be open
+    if (activeVote.status !== "open") return;
 
-    // Snapshot candidates now
-    const candidates = Array.from(new Set([...activePoolGameIds, ...submittedIds]));
+    // feature flag must be enabled
+    if (groupSettings?.autoAdvanceWhenAllVoted !== true) return;
 
-    await updateDoc(doc(db, "groups", currentGroupId, "votes", activeVote.id), {
-      status: "open",
-      openedAt: Date.now(),
-      candidates,
-    });
+    if (!groupMemberCount || groupMemberCount <= 0) return;
 
-    await updateDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"), {
-      status: "open",
-      updatedAt: Date.now(),
-    });
+    if (autoCloseRef.current.voteId === activeVote.id) return;
 
-    showToast("Voting is open 🎲", "success");
-  }
+    if (ballotsCount >= groupMemberCount) {
+      autoCloseRef.current.voteId = activeVote.id;
+      closeVote({ auto: true }).catch((e) => {
+        console.error("Auto closeVote failed:", e);
+        autoCloseRef.current.voteId = null;
+      });
+    }
+  }, [
+    currentGroupId,
+    activeVote?.id,
+    activeVote?.status,
+    groupSettings?.autoAdvanceWhenAllVoted,
+    ballotsCount,
+    groupMemberCount,
+    closeVote,
+  ]);
 
   async function saveGroupWeights(overrides) {
     if (!user || !currentGroupId) return;
@@ -1681,8 +1843,6 @@ export default function App() {
     !showGameDetail &&
     !isAddGameOpen &&
     !isEditGameOpen;
-
-  const sessionIndex = Number(sessionMeta?.sessionIndex || 0);
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
@@ -1914,6 +2074,9 @@ export default function App() {
                         canCloseActiveVote={canCloseActiveVote}
                         poolActiveIds={poolActiveIds}
                         submittedGameIds={submittedGameIds}
+                        groupMemberCount={groupMemberCount}
+                        submissionsCount={submissionsCount}
+                        ballotsCount={ballotsCount}
                       />
                     }
                     canEditNewness={user?.uid === currentGroup?.ownerId}

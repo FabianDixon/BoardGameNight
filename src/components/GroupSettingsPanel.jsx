@@ -49,6 +49,9 @@ export default function GroupSettingsPanel({
       disallowVotingOwnSubmission: meta?.disallowVotingOwnSubmission ?? false,
       moderatorsCanEditWeights: meta?.moderatorsCanEditWeights ?? false,
 
+      autoAdvanceWhenAllSubmitted: meta?.autoAdvanceWhenAllSubmitted ?? false,
+      autoAdvanceWhenAllVoted: meta?.autoAdvanceWhenAllVoted ?? false,
+
       // Optional/future (safe to keep; not used for auto-advance-by-participation)
       collectingDurationMinutes: meta?.collectingDurationMinutes ?? 10,
       votingDurationMinutes: meta?.votingDurationMinutes ?? 10,
@@ -164,6 +167,22 @@ function MetaSettingsSection({
           onChange={(v) => setMetaField("moderatorsCanEditWeights", v)}
         />
 
+        <SettingToggle
+          label="Auto-advance when everyone submitted"
+          help="If enabled, the session automatically moves from Collecting → Voting when all members submitted."
+          checked={!!metaForm.autoAdvanceWhenAllSubmitted}
+          disabled={!canEditMeta}
+          onChange={(v) => setMetaField("autoAdvanceWhenAllSubmitted", v)}
+        />
+
+        <SettingToggle
+          label="Auto-advance when everyone voted"
+          help="If enabled, the session automatically moves from Voting → Results when all members voted."
+          checked={!!metaForm.autoAdvanceWhenAllVoted}
+          disabled={!canEditMeta}
+          onChange={(v) => setMetaField("autoAdvanceWhenAllVoted", v)}
+        />
+
         <SettingNumber
           label="Collecting duration (minutes)"
           help="Optional (for future timed mode). Not used for auto-advance-by-participation."
@@ -210,6 +229,8 @@ function MetaSettingsSection({
             onSaveMeta?.({
               disallowVotingOwnSubmission: !!metaForm.disallowVotingOwnSubmission,
               moderatorsCanEditWeights: !!metaForm.moderatorsCanEditWeights,
+              autoAdvanceWhenAllSubmitted: !!metaForm.autoAdvanceWhenAllSubmitted,
+              autoAdvanceWhenAllVoted: !!metaForm.autoAdvanceWhenAllVoted,
               collectingDurationMinutes: Number(metaForm.collectingDurationMinutes) || 10,
               votingDurationMinutes: Number(metaForm.votingDurationMinutes) || 10,
               updatedAt: Date.now(),
