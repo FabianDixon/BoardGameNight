@@ -1,4 +1,5 @@
 // src/components/GroupDetail.jsx
+import { useMemo, useState } from "react";
 import GameTile from "./GameTile";
 
 export default function GroupDetail({
@@ -16,6 +17,23 @@ export default function GroupDetail({
   onTogglePlayedOverride,
 }) {
   const groupId = group?.id;
+
+  // Filter group collection by pool membership (🎲)
+  // all | in | out
+  const [poolFilter, setPoolFilter] = useState("all");
+
+  const poolCounts = useMemo(() => {
+    const inPool = (groupGames || []).filter((g) => !!g.isActiveInPool).length;
+    const total = (groupGames || []).length;
+    return { inPool, outPool: Math.max(0, total - inPool), total };
+  }, [groupGames]);
+
+  const filteredGames = useMemo(() => {
+    const arr = groupGames || [];
+    if (poolFilter === "in") return arr.filter((g) => !!g.isActiveInPool);
+    if (poolFilter === "out") return arr.filter((g) => !g.isActiveInPool);
+    return arr;
+  }, [groupGames, poolFilter]);
 
   return (
     <div className="space-y-4">
@@ -103,19 +121,57 @@ export default function GroupDetail({
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xl font-semibold">Group collection</h3>
             <span className="text-sm text-gray-600">
-              {groupGames.length} games
+              {filteredGames.length} / {poolCounts.total} games
             </span>
           </div>
 
-          {groupGames.length === 0 ? (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-full border text-sm ${
+                poolFilter === "all" ? "bg-gray-100" : "bg-white"
+              }`}
+              onClick={() => setPoolFilter("all")}
+              title="Show all games"
+            >
+              All ({poolCounts.total})
+            </button>
+
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-full border text-sm ${
+                poolFilter === "in" ? "bg-gray-100" : "bg-white"
+              }`}
+              onClick={() => setPoolFilter("in")}
+              title="Show games that are already in the pool"
+            >
+              🎲 In pool ({poolCounts.inPool})
+            </button>
+
+            <button
+              type="button"
+              className={`px-3 py-1.5 rounded-full border text-sm ${
+                poolFilter === "out" ? "bg-gray-100" : "bg-white"
+              }`}
+              onClick={() => setPoolFilter("out")}
+              title="Show games that are not in the pool"
+            >
+              Not in pool ({poolCounts.outPool})
+            </button>
+          </div>
+
+          {poolCounts.total === 0 ? (
             <p className="text-sm text-gray-600">
               No games in this group yet. Add games to your collection to
               populate it.
             </p>
           ) : (
+            filteredGames.length === 0 ? (
+              <p className="text-sm text-gray-600">No games match this filter.</p>
+            ) : (
             <div className="mx-auto max-w-6xl">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 items-start">
-                {groupGames.map((game) => {
+                {filteredGames.map((game) => {
                   const isNewForGroup =
                     Number(game.playedCount || 0) === 0 && !game.playedOverride;
 
@@ -151,6 +207,7 @@ export default function GroupDetail({
                 })}
               </div>
             </div>
+            )
           )}
         </div>
       )}
