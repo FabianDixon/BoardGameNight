@@ -134,6 +134,8 @@ export default function App() {
     imageUrl: "",
   });
 
+  const [isDeletingGame, setIsDeletingGame] = useState(false);
+
   const [returnCtx, setReturnCtx] = useState(null);
 
   const [groupAccessReady, setGroupAccessReady] = useState(false);
@@ -1004,6 +1006,50 @@ export default function App() {
     } catch (err) {
       console.error("saveEditedGame failed:", err);
       showToast(err.code || "Failed to update game.", "error");
+    }
+  }
+
+  async function deleteGame(gameId) {
+    if (!user || !gameId) return;
+
+    const ok = window.confirm(
+      "Delete this game? This cannot be undone and will remove it from your groups."
+    );
+    if (!ok) return;
+
+    try {
+      setIsDeletingGame(true);
+
+      // IMPORTANT: require the main delete to succeed.
+      // If rules deny this (e.g., game owned by someone else), we should NOT show success.
+      await deleteDoc(doc(db, "games", gameId));
+
+      // Optimistically remove from local UI immediately.
+      setGames((prev) => prev.filter((g) => g.id !== gameId));
+      setGroupGameRefs((prev) => prev.filter((r) => r.id !== gameId));
+
+      // Best-effort cleanup (Firestore deletes are idempotent)
+      const ops = [];
+
+      // Remove from my personal collection + my rating doc (if they exist)
+      ops.push(deleteDoc(doc(db, "users", user.uid, "collection", gameId)));
+      ops.push(deleteDoc(doc(db, "ratings", `${user.uid}_${gameId}`)));
+
+      // Remove from each group I belong to (removes it from that group's pool for everyone)
+      for (const g of myGroups) {
+        ops.push(deleteDoc(doc(db, "groups", g.id, "games", gameId)));
+      }
+
+      await Promise.allSettled(ops);
+
+      showToast("Game deleted 🗑️", "success");
+      setIsEditGameOpen(false);
+      setSelectedGame(null);
+    } catch (err) {
+      console.error("deleteGame failed:", err);
+      showToast(err.code || "Failed to delete game.", "error");
+    } finally {
+      setIsDeletingGame(false);
     }
   }
 
@@ -1977,9 +2023,24 @@ export default function App() {
             rows={4}
           />
 
-          <button className="bg-blue-600 text-white px-4 py-2 rounded">
+          <div className="flex items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            className="border border-red-300 bg-red-50 text-red-700 px-4 py-2 rounded hover:bg-red-100 disabled:opacity-50"
+            onClick={() => deleteGame(editGameForm.id)}
+            disabled={!editGameForm.id || isDeletingGame}
+            title="Delete game"
+          >
+            {isDeletingGame ? "Deleting…" : "Delete game"}
+          </button>
+
+          <button
+            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+            disabled={isDeletingGame}
+          >
             Save changes
           </button>
+        </div>
         </form>
       </Modal>
 
