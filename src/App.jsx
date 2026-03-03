@@ -113,6 +113,8 @@ export default function App() {
   const [mySubmissionGameId, setMySubmissionGameId] = useState(null);
   const [sessionSubmissions, setSessionSubmissions] = useState([]); // [{ userId, gameId, submittedAt }]
 
+  const [mySharedGameIdsInCurrentGroup, setMySharedGameIdsInCurrentGroup] = useState(new Set());
+
   const [sessionMeta, setSessionMeta] = useState(null);
 
   const [isAddGameOpen, setIsAddGameOpen] = useState(false);
@@ -319,7 +321,7 @@ export default function App() {
     });
   }, [user, currentGroupId, groupAccessReady]);
 
-  // --- Materialized group collection ---
+// --- Materialized group collection ---
   useEffect(() => {
     if (!currentGroupId || !groupAccessReady) {
       setGroupGameRefs([]);
@@ -592,6 +594,50 @@ export default function App() {
       .filter(Boolean);
   }, [currentGroupId, games, groupGameRefs, poolDocs]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMySharedGameIds() {
+      if (!user?.uid || !currentGroupId || !groupAccessReady) {
+        setMySharedGameIdsInCurrentGroup(new Set());
+        return;
+      }
+
+      try {
+        // Only check games that currently exist in this group's materialized collection
+        const ids = (groupGameRefs || []).map((r) => r.id).filter(Boolean);
+        if (ids.length === 0) {
+          setMySharedGameIdsInCurrentGroup(new Set());
+          return;
+        }
+
+        const checks = await Promise.allSettled(
+          ids.map((gameId) =>
+            getDoc(doc(db, "groups", currentGroupId, "games", gameId, "owners", user.uid))
+          )
+        );
+
+        const s = new Set();
+        for (let i = 0; i < checks.length; i++) {
+          const res = checks[i];
+          if (res.status === "fulfilled" && res.value.exists()) {
+            s.add(ids[i]);
+          }
+        }
+
+        if (!cancelled) setMySharedGameIdsInCurrentGroup(s);
+      } catch (err) {
+        console.warn("Failed to load my shared games for this group:", err);
+        if (!cancelled) setMySharedGameIdsInCurrentGroup(new Set());
+      }
+    }
+
+    loadMySharedGameIds();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, currentGroupId, groupAccessReady, groupGameRefs]);
+
   const myRole = useMemo(() => {
     const me = members.find((m) => m.userId === user?.uid);
     return me?.role || "member";
@@ -832,6 +878,48 @@ export default function App() {
     showToast("Group collection synced ✅", "success");
   }, [user, showToast]);
   
+  const setMyGameSharedInGroup = useCallback(
+    async (groupId, gameId, shouldShare) => {
+      if (!user) return;
+
+      const gid = safeString(groupId).trim();
+      const gmid = safeString(gameId).trim();
+      if (!gid || !gmid) return;
+
+      const ownerRef = doc(db, "groups", gid, "games", gmid, "owners", user.uid);
+      const groupGameRef = doc(db, "groups", gid, "games", gmid);
+      const now = Date.now();
+
+      await runTransaction(db, async (tx) => {
+        const ownerSnap = await tx.get(ownerRef);
+
+        if (shouldShare) {
+          if (!ownerSnap.exists()) {
+            tx.set(ownerRef, { addedAt: now }, { merge: true });
+            tx.set(groupGameRef, { ownersCount: increment(1), updatedAt: now }, { merge: true });
+          } else {
+            tx.set(ownerRef, { addedAt: ownerSnap.data()?.addedAt ?? now }, { merge: true });
+          }
+        } else {
+          if (ownerSnap.exists()) {
+            tx.delete(ownerRef);
+            tx.set(groupGameRef, { ownersCount: increment(-1), updatedAt: now }, { merge: true });
+          }
+        }
+      });
+
+      // Optimistic local update
+      setMySharedGameIdsInCurrentGroup((prev) => {
+        const next = new Set(prev);
+        if (shouldShare) next.add(gmid);
+        else next.delete(gmid);
+        return next;
+      });
+
+      showToast(shouldShare ? "Shared with group" : "Hidden from group", "success");
+    },
+    [user, showToast]
+  );
 
   async function addGame(e) {
     e.preventDefault();
@@ -2163,6 +2251,9 @@ export default function App() {
                         }}
                       />
                     }
+                    myCollectionGames={collectionGames}
+                    mySharedGameIds={mySharedGameIdsInCurrentGroup}
+                    onSetMyGameSharedInGroup={setMyGameSharedInGroup}
                   />
                 ) : (
                   <div className="bg-white p-4 rounded-2xl shadow">

@@ -15,12 +15,17 @@ export default function GroupDetail({
   settingsNode,
   canEditNewness,
   onTogglePlayedOverride,
+  myCollectionGames,
+  mySharedGameIds,
+  onSetMyGameSharedInGroup,
 }) {
   const groupId = group?.id;
 
   // Filter group collection by pool membership (🎲)
   // all | in | out
   const [poolFilter, setPoolFilter] = useState("all");
+  const [manageBusyId, setManageBusyId] = useState(null);
+  const [manageQuery, setManageQuery] = useState("");
 
   const poolCounts = useMemo(() => {
     const inPool = (groupGames || []).filter((g) => !!g.isActiveInPool).length;
@@ -120,9 +125,23 @@ export default function GroupDetail({
         <div className="bg-white p-4 rounded-2xl shadow border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xl font-semibold">Group collection</h3>
-            <span className="text-sm text-gray-600">
-              {filteredGames.length} / {poolCounts.total} games
-            </span>
+
+            <div className="flex items-center gap-2">
+              {groupId && myCollectionGames && onSetMyGameSharedInGroup && (
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
+                  onClick={() => setGroupTab("manage")}
+                  title="Choose which games from your library are shared with this group"
+                >
+                  Manage my games
+                </button>
+              )}
+
+              <span className="text-sm text-gray-600">
+                {filteredGames.length} / {poolCounts.total} games
+              </span>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -208,6 +227,80 @@ export default function GroupDetail({
               </div>
             </div>
             )
+          )}
+        </div>
+      )}
+
+      {groupTab === "manage" && (
+        <div className="bg-white p-4 rounded-2xl shadow border">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-xl font-semibold">Manage my games</h3>
+              <p className="text-sm text-gray-600">
+                Choose which games from your library are shared with <span className="font-medium">{group?.name || "this group"}</span>.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
+              onClick={() => setGroupTab("collection")}
+              disabled={!!manageBusyId}
+            >
+              Back to collection
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 mb-3">
+            <input
+              className="w-full px-3 py-2 border rounded-xl"
+              placeholder="Search my library…"
+              value={manageQuery}
+              onChange={(e) => setManageQuery(e.target.value)}
+            />
+          </div>
+
+          {(myCollectionGames || []).length === 0 ? (
+            <p className="text-sm text-gray-600">Your collection is empty.</p>
+          ) : (
+            <div className="max-h-[70vh] overflow-auto divide-y">
+              {[...(myCollectionGames || [])]
+                .slice()
+                .sort((a, b) => (a.title || "").localeCompare(b.title || ""))
+                .filter((g) => (g.title || "").toLowerCase().includes((manageQuery || "").trim().toLowerCase()))
+                .map((g) => {
+                  const shared = !!mySharedGameIds?.has(g.id);
+                  const busy = manageBusyId === g.id;
+
+                  return (
+                    <div key={g.id} className="py-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">{g.title}</div>
+                        <div className="text-xs text-gray-500">{shared ? "Shared with group" : "Hidden from group"}</div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap ${
+                          shared ? "bg-white hover:bg-gray-50" : "bg-gray-100 hover:bg-gray-200"
+                        }`}
+                        disabled={busy}
+                        onClick={async () => {
+                          try {
+                            setManageBusyId(g.id);
+                            await onSetMyGameSharedInGroup(groupId, g.id, !shared);
+                          } finally {
+                            setManageBusyId(null);
+                          }
+                        }}
+                        title={shared ? "Hide this game from the group" : "Share this game with the group"}
+                      >
+                        {busy ? "Working…" : shared ? "Hide" : "Share"}
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
           )}
         </div>
       )}
