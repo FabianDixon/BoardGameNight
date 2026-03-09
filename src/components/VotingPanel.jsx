@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import GameImage from "./GameImage";
 import Fab from "./ui/Fab";
+import { VOTE_STATUS } from "../constants/workflow";
 
 function VoteTile({
   game,
@@ -138,7 +139,7 @@ function VotingPanelInner({
   }, [candidateIds]);
 
   const availableSubmissionGames = useMemo(() => {
-    if (status !== "collecting") return [];
+    if (status !== VOTE_STATUS.COLLECTING) return [];
 
     const pool = poolActiveIds instanceof Set ? poolActiveIds : new Set();
     const submitted = submittedGameIds instanceof Set ? submittedGameIds : new Set();
@@ -194,8 +195,8 @@ function VotingPanelInner({
     ? selectedSubmissionId
     : null;
 
-  const canSubmit = !!user && !!currentGroupId && status === "collecting";
-  const canVote = !!user && !!currentGroupId && status === "open";
+  const canSubmit = !!user && !!currentGroupId && status === VOTE_STATUS.COLLECTING;
+  const canVote = !!user && !!currentGroupId && status === VOTE_STATUS.OPEN;
 
   const alreadySubmitted = !!mySubId;
   const alreadyVoted = !!myBallot?.gameId;
@@ -266,7 +267,7 @@ function VotingPanelInner({
           </span>
         </div>
 
-        {activeVote?.status === "collecting" && (
+        {activeVote?.status === VOTE_STATUS.COLLECTING && (
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
             <span className="px-2 py-1 rounded-full border bg-gray-50">
               Submissions: <span className="font-semibold tabular-nums">
@@ -282,7 +283,7 @@ function VotingPanelInner({
           </div>
         )}
 
-        {activeVote?.status === "open" && (
+        {activeVote?.status === VOTE_STATUS.OPEN && (
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
             <span className="px-2 py-1 rounded-full border bg-gray-50">
               Votes: <span className="font-semibold tabular-nums">
@@ -308,7 +309,7 @@ function VotingPanelInner({
             </button>
           )}
 
-          {activeVote?.status === "collecting" && canManageSession && (
+          {activeVote?.status === VOTE_STATUS.COLLECTING && canManageSession && (
             <button
               className="px-4 py-2 rounded-xl border bg-white"
               onClick={onStartVoting}
@@ -317,7 +318,7 @@ function VotingPanelInner({
             </button>
           )}
 
-          {activeVote?.status === "open" && (
+          {activeVote?.status === VOTE_STATUS.OPEN && (
             <button
               className="px-4 py-2 rounded-xl border bg-white"
               onClick={onCloseVote}
@@ -328,7 +329,7 @@ function VotingPanelInner({
             </button>
           )}
 
-          {activeVote?.status === "closed" && (
+          {activeVote?.status === VOTE_STATUS.CLOSED && (
             <>
               <button
                 className="px-4 py-2 rounded-xl border bg-white"
@@ -356,7 +357,7 @@ function VotingPanelInner({
           )}
         </div>
 
-        {activeVote?.status === "collecting" && (
+        {activeVote?.status === VOTE_STATUS.COLLECTING && (
           <div className="mt-4 text-sm text-gray-700">
             Your submission:{" "}
             <span className="font-semibold">
@@ -365,7 +366,7 @@ function VotingPanelInner({
           </div>
         )}
 
-        {activeVote?.status === "open" && (
+        {activeVote?.status === VOTE_STATUS.OPEN && (
           <div className="mt-4 text-sm text-gray-700">
             Your vote:{" "}
             <span className="font-semibold">
@@ -375,7 +376,7 @@ function VotingPanelInner({
         )}
       </div>
 
-      {activeVote?.status === "collecting" && (
+      {activeVote?.status === VOTE_STATUS.COLLECTING && (
         <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold">Submit one game</h3>
           <p className="text-sm text-gray-600">
@@ -418,7 +419,7 @@ function VotingPanelInner({
         </div>
       )}
 
-      {activeVote?.status === "open" && (
+      {activeVote?.status === VOTE_STATUS.OPEN && (
         <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold">Cast your vote</h3>
           <p className="text-sm text-gray-600">
@@ -465,7 +466,7 @@ function VotingPanelInner({
         </div>
       )}
 
-      {activeVote?.status === "closed" && (
+      {activeVote?.status === VOTE_STATUS.CLOSED && (
         <div className="bg-white rounded-2xl shadow border p-4 space-y-3">
           <h3 className="text-xl font-semibold">Results</h3>
 
@@ -522,7 +523,7 @@ function VotingPanelInner({
         </div>
       )}
       <Fab
-        show={activeVote?.status === "collecting"}
+        show={activeVote?.status === VOTE_STATUS.COLLECTING}
         variant="pill"
         label={alreadySubmitted ? "Submitted" : "Submit"}
         disabled={submitDisabled}
@@ -532,7 +533,7 @@ function VotingPanelInner({
       </Fab>
 
       <Fab
-        show={activeVote?.status === "open"}
+        show={activeVote?.status === VOTE_STATUS.OPEN}
         variant="pill"
         label={alreadyVoted ? "Voted" : "Vote"}
         disabled={voteDisabled}

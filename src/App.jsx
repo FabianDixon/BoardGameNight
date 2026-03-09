@@ -10,10 +10,7 @@ import {
   getDocs,
   increment,
   onSnapshot,
-  orderBy,
-  query,
   setDoc,
-  where,
   updateDoc,
   writeBatch,
   runTransaction,
@@ -46,6 +43,7 @@ import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
 import { buildSessionMailto, copyJsonToClipboard } from "./utils/emailExport";
+import { VOTE_STATUS, APP_TAB, GROUP_VIEW, GROUP_TAB } from "./constants/workflow";
 
 const auth = getAuth();
 
@@ -100,7 +98,7 @@ export default function App() {
 
   const myCollection = useMyCollection(user);
 
-  const [activeTab, setActiveTab] = useState("library"); // library | collection | group | profile
+  const [activeTab, setActiveTab] = useState(APP_TAB.LIBRARY); // library | collection | group | profile
 
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -110,8 +108,8 @@ export default function App() {
 
   const members = useGroupMembers(user, currentGroupId, groupAccessReady);
 
-  const [groupView, setGroupView] = useState("picker"); // "picker" | "detail"
-  const [groupTab, setGroupTab] = useState("collection");
+  const [groupView, setGroupView] = useState(GROUP_VIEW.PICKER); // "picker" | "detail"
+  const [groupTab, setGroupTab] = useState(GROUP_TAB.COLLECTION);
 
   const groupGameRefs = useGroupGames(currentGroupId, groupAccessReady);
   const groupWeightOverrides = useGroupWeights(currentGroupId, groupAccessReady);
@@ -122,8 +120,8 @@ export default function App() {
   const activeVote = useMemo(() => {
     if (!votes.length) return null;
     return (
-      votes.find(v => v.status === "collecting") ||
-      votes.find(v => v.status === "open") ||
+      votes.find(v => v.status === VOTE_STATUS.COLLECTING) ||
+      votes.find(v => v.status === VOTE_STATUS.OPEN) ||
       votes[0] // last closed (latest)
     );
   }, [votes]);
@@ -176,7 +174,7 @@ export default function App() {
   }, [user, activeVote, currentGroup]);
 
   const canCloseActiveVote = useMemo(() => {
-    if (!user || !activeVote || activeVote.status !== "open") return false;
+    if (!user || !activeVote || activeVote.status !== VOTE_STATUS.OPEN) return false;
     const isVoteOwner = activeVote.createdBy === user.uid;
     const isGroupOwner = currentGroup?.ownerId === user.uid;
     return isVoteOwner || isGroupOwner;
@@ -247,16 +245,37 @@ export default function App() {
 
       setMyGroups(groupDocs);
 
-      if (!currentGroupId && ids.length > 0) setCurrentGroupId(ids[0]);
-      if (currentGroupId && ids.length > 0 && !ids.includes(currentGroupId)) {
-        setCurrentGroupId(ids[0]);
-      }
-      if (ids.length === 0) setCurrentGroupId("");
+      setCurrentGroupId((prev) => {
+        if (!prev && ids.length > 0) return ids[0];
+        if (prev && ids.length > 0 && !ids.includes(prev)) return ids[0];
+        if (ids.length === 0) return "";
+        return prev;
+      });
     });
 
     return unsub;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  const syncMyNicknameToGroupMemberships = useCallback(
+    async (nextNickname) => {
+      if (!user) return;
+      const nick = (nextNickname ?? profile?.nickname ?? "").trim();
+      if (!nick) return;
+
+      const batch = writeBatch(db);
+
+      for (const g of myGroups) {
+        batch.set(
+          doc(db, "groups", g.id, "members", user.uid),
+          { nickname: nick },
+          { merge: true }
+        );
+      }
+
+      await batch.commit();
+    },
+    [user, profile?.nickname, myGroups]
+  );
 
   // --Suscribe to settings --
 
@@ -268,18 +287,17 @@ export default function App() {
 
 
   useEffect(() => {
-    if (activeTab !== "group") return;
+    if (activeTab !== APP_TAB.GROUP) return;
 
-    if (groupView === "detail" && !currentGroupId) {
-      setGroupView("picker");
+    if (groupView === GROUP_VIEW.DETAIL && !currentGroupId) {
+      setGroupView(GROUP_VIEW.PICKER);
     }
   }, [activeTab, groupView, currentGroupId]);
 
   useEffect(() => {
-    if (!user || !profile?.nickname || myGroups.length === 0) return;
+    if (!user?.uid || !profile?.nickname || myGroups.length === 0) return;
     syncMyNicknameToGroupMemberships(profile.nickname).catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, profile?.nickname, myGroups.length]);
+  }, [user?.uid, profile?.nickname, myGroups.length, syncMyNicknameToGroupMemberships]);
 
   useEffect(() => {
     let cancelled = false;
@@ -426,7 +444,7 @@ export default function App() {
   }, [user, currentGroup]);
 
   const voteResults = useMemo(() => {
-    if (!activeVote || activeVote.status !== "closed") return [];
+    if (!activeVote || activeVote.status !== VOTE_STATUS.CLOSED) return [];
 
     const gameMap = new Map(games.map((g) => [g.id, g]));
 
@@ -561,24 +579,6 @@ export default function App() {
       await new Promise((r) => setTimeout(r, intervalMs));
     }
     throw new Error("MEMBERSHIP_NOT_VISIBLE_YET");
-  }
-
-  async function syncMyNicknameToGroupMemberships(nextNickname) {
-    if (!user) return;
-    const nick = (nextNickname ?? profile?.nickname ?? "").trim();
-    if (!nick) return;
-
-    const batch = writeBatch(db);
-
-    for (const g of myGroups) {
-      batch.set(
-        doc(db, "groups", g.id, "members", user.uid),
-        { nickname: nick },
-        { merge: true }
-      );
-    }
-
-    await batch.commit();
   }
 
   async function saveNickname() {
@@ -884,10 +884,6 @@ export default function App() {
       // If rules deny this (e.g., game owned by someone else), we should NOT show success.
       await deleteDoc(doc(db, "games", gameId));
 
-      // Optimistically remove from local UI immediately.
-      setGames((prev) => prev.filter((g) => g.id !== gameId));
-      setGroupGameRefs((prev) => prev.filter((r) => r.id !== gameId));
-
       // Best-effort cleanup (Firestore deletes are idempotent)
       const ops = [];
 
@@ -1116,7 +1112,7 @@ export default function App() {
       // UI state updates
       if (currentGroupId === gid) {
         setCurrentGroupId("");
-        setGroupView("picker");
+              setGroupView(GROUP_VIEW.PICKER);
       }
 
       showToast("Left group.", "success");
@@ -1172,7 +1168,7 @@ export default function App() {
 
   async function castVote(gameId) {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
-    if (activeVote.status !== "open") return;
+    if (activeVote.status !== VOTE_STATUS.OPEN) return;
 
     const candidates = activeVote.candidates || [];
     if (!candidates.includes(gameId)) {
@@ -1190,7 +1186,7 @@ export default function App() {
 
   const closeVote = useCallback(async (opts = {}) => {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
-    if (activeVote.status !== "open") return;
+    if (activeVote.status !== VOTE_STATUS.OPEN) return;
 
     // ✅ only block manual calls; allow auto calls
     if (!opts.auto && !canCloseActiveVote) {
@@ -1253,7 +1249,7 @@ export default function App() {
 
       // Close vote + store debug info
       batch.update(voteRef, {
-        status: "closed",
+        status: VOTE_STATUS.CLOSED,
         closedAt: now,
         winnerGameId,
         scoreBreakdown: normalizedBreakdown,
@@ -1337,7 +1333,7 @@ export default function App() {
   async function callSession() {
     if (!user || !currentGroupId) return;
 
-    if (activeVote && (activeVote.status === "collecting" || activeVote.status === "open")) {
+    if (activeVote && (activeVote.status === VOTE_STATUS.COLLECTING || activeVote.status === VOTE_STATUS.OPEN)) {
       showToast("A session is already active.", "info");
       return;
     }
@@ -1345,7 +1341,7 @@ export default function App() {
     const now = Date.now();
 
     const voteRef = await addDoc(collection(db, "groups", currentGroupId, "votes"), {
-      status: "collecting",
+      status: VOTE_STATUS.COLLECTING,
       createdAt: now,
       createdBy: user.uid,
     });
@@ -1359,7 +1355,7 @@ export default function App() {
       {
         activeVoteId: voteRef.id,
         ownerId: user.uid,
-        status: "collecting",
+        status: VOTE_STATUS.COLLECTING,
         sessionIndex: currentIndex,
         updatedAt: now,
       },
@@ -1378,7 +1374,7 @@ export default function App() {
       return;
     }
 
-    if (activeVote.status !== "collecting") {
+    if (activeVote.status !== VOTE_STATUS.COLLECTING) {
       showToast("Submissions are closed.", "error");
       return;
     }
@@ -1411,12 +1407,12 @@ export default function App() {
 
         // Must be collecting (server truth)
         const voteStatus = voteSnap.exists() ? voteSnap.data()?.status : null;
-        if (voteStatus !== "collecting") {
+        if (voteStatus !== VOTE_STATUS.COLLECTING) {
           throw new Error("NOT_COLLECTING");
         }
 
         const metaStatus = metaSnap.exists() ? metaSnap.data()?.status : null;
-        if (metaStatus && metaStatus !== "collecting") {
+        if (metaStatus && metaStatus !== VOTE_STATUS.COLLECTING) {
           throw new Error("NOT_COLLECTING");
         }
 
@@ -1473,7 +1469,7 @@ export default function App() {
   const startVoting = useCallback(
     async ({ allowMember = false, silent = false } = {}) => {
       if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
-      if (activeVote.status !== "collecting") return;
+      if (activeVote.status !== VOTE_STATUS.COLLECTING) return;
 
       const isVoteOwner = activeVote.createdBy === user.uid;
       const isGroupOwner = currentGroup?.ownerId === user.uid;
@@ -1492,13 +1488,13 @@ export default function App() {
       const candidates = Array.from(new Set([...activePoolGameIds, ...submittedIds]));
 
       await updateDoc(doc(db, "groups", currentGroupId, "votes", activeVote.id), {
-        status: "open",
+        status: VOTE_STATUS.OPEN,
         openedAt: Date.now(),
         candidates,
       });
 
       await updateDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"), {
-        status: "open",
+        status: VOTE_STATUS.OPEN,
         updatedAt: Date.now(),
       });
 
@@ -1513,7 +1509,7 @@ export default function App() {
     if (!activeVote?.id) return;
 
     // must be collecting
-    if (activeVote.status !== "collecting") return;
+    if (activeVote.status !== VOTE_STATUS.COLLECTING) return;
 
     // feature flag must be enabled
     if (groupSettings?.autoAdvanceWhenAllSubmitted !== true) return;
@@ -1548,7 +1544,7 @@ export default function App() {
     if (!activeVote?.id) return;
 
     // must be open
-    if (activeVote.status !== "open") return;
+    if (activeVote.status !== VOTE_STATUS.OPEN) return;
 
     // feature flag must be enabled
     if (groupSettings?.autoAdvanceWhenAllVoted !== true) return;
@@ -1741,11 +1737,11 @@ export default function App() {
   const showGameDetail = !!selectedGameFresh;
 
   const isGroupInlineDetail =
-  activeTab === "group" && selectedGame && returnCtx?.activeTab === "group";
+  activeTab === APP_TAB.GROUP && selectedGame && returnCtx?.activeTab === APP_TAB.GROUP;
 
   const showFab =
     !showAuthPrompt &&
-    (activeTab === "library" || activeTab === "collection") &&
+    (activeTab === APP_TAB.LIBRARY || activeTab === APP_TAB.COLLECTION) &&
     !showGameDetail &&
     !isAddGameOpen &&
     !isEditGameOpen;
@@ -1757,10 +1753,10 @@ export default function App() {
           <div>
             <h1 className="text-2xl md:text-3xl font-bold leading-tight">🎲 Board Game Night</h1>
             <p className="text-xs md:text-sm text-gray-600">
-              {activeTab === "library" && "Browse the full library"}
-              {activeTab === "collection" && "Games you can bring"}
-              {activeTab === "group" && "Pick a group and vote"}
-              {activeTab === "profile" && "Your nickname and settings"}
+              {activeTab === APP_TAB.LIBRARY && "Browse the full library"}
+              {activeTab === APP_TAB.COLLECTION && "Games you can bring"}
+              {activeTab === APP_TAB.GROUP && "Pick a group and vote"}
+              {activeTab === APP_TAB.PROFILE && "Your nickname and settings"}
             </p>
           </div>
         </div>
@@ -1768,10 +1764,10 @@ export default function App() {
         {!showAuthPrompt && (
           <div className="mt-3 flex gap-2 flex-wrap">
             {[
-              { key: "library", label: "📚 Library" },
-              { key: "collection", label: "🧺 My Collection" },
-              { key: "group", label: "👥 Group" },
-              { key: "profile", label: "👤 Profile" },
+              { key: APP_TAB.LIBRARY, label: "📚 Library" },
+              { key: APP_TAB.COLLECTION, label: "🧺 My Collection" },
+              { key: APP_TAB.GROUP, label: "👥 Group" },
+              { key: APP_TAB.PROFILE, label: "👤 Profile" },
             ].map((t) => {
               const isActive = activeTab === t.key;
               return (
@@ -1786,8 +1782,8 @@ export default function App() {
                     setSelectedGame(null);
                     setSearchQuery("");
                   }}
-                  disabled={t.key === "collection" && !user}
-                  title={t.key === "collection" && !user ? "Sign-in required" : ""}
+                  disabled={t.key === APP_TAB.COLLECTION && !user}
+                  title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
                 >
                   <span className="text-sm font-medium text-gray-900">{t.label}</span>
                 </button>
@@ -1825,7 +1821,7 @@ export default function App() {
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "signin");
               setShowAuthPrompt(false);
-              setActiveTab("profile");
+              setActiveTab(APP_TAB.PROFILE);
               // ProfileCard will show Sign in UI
             }}
           >
@@ -1905,7 +1901,7 @@ export default function App() {
       </Modal>
 
       {/* Profile */}
-      {activeTab === "profile" && (
+      {activeTab === APP_TAB.PROFILE && (
         <ProfileCard
           user={user}
           profile={profile}
@@ -1916,10 +1912,10 @@ export default function App() {
       )}
 
       {/* Group */}
-      {activeTab === "group" && (
+      {activeTab === APP_TAB.GROUP && (
         <>
           {/* If a game was opened from Group, show details INSTEAD of showing the group list below */}
-          {selectedGame && returnCtx?.activeTab === "group" ? (
+          {selectedGame && returnCtx?.activeTab === APP_TAB.GROUP ? (
             <GameDetail
               game={selectedGameFresh}
               inCollection={myCollection.has(selectedGameFresh.id)}
@@ -1942,7 +1938,7 @@ export default function App() {
           ) : (
             <div className="space-y-4">
               {/* PICKER VIEW */}
-              {groupView === "picker" && (
+              {groupView === GROUP_VIEW.PICKER && (
                 <GroupsPanel
                   user={user}
                   myGroups={myGroups}
@@ -1951,20 +1947,20 @@ export default function App() {
                   onCreateGroup={createGroup}
                   onJoinGroup={joinGroup}
                   onOpenGroup={() => {
-                    setGroupView("detail");
-                    setGroupTab("collection");
+                    setGroupView(GROUP_VIEW.DETAIL);
+                    setGroupTab(GROUP_TAB.COLLECTION);
                   }}
                 />
               )}
 
               {/* DETAIL VIEW */}
-              {groupView === "detail" && (
+              {groupView === GROUP_VIEW.DETAIL && (
                 currentGroup ? (
                   <GroupDetail
                     group={currentGroup}
                     groupTab={groupTab}
                     setGroupTab={setGroupTab}
-                    onBack={() => setGroupView("picker")}
+                    onBack={() => setGroupView(GROUP_VIEW.PICKER)}
                     onLeaveGroup={leaveGroup}
                     groupGames={groupGames}
                     onOpenGame={(game) => {
@@ -2034,7 +2030,7 @@ export default function App() {
                     </p>
                     <button
                       className="text-sm text-blue-700 hover:underline"
-                      onClick={() => setGroupView("picker")}
+                      onClick={() => setGroupView(GROUP_VIEW.PICKER)}
                     >
                       ← Back to groups
                     </button>

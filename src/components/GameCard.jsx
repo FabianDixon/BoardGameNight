@@ -1,5 +1,4 @@
 // src/components/GameCard.jsx
-import React from "react";
 import CollectionToggle from "./CollectionToggle";
 import { Card, CardBody, CardFooter } from "./ui/Card";
 import GameImage from "./GameImage";

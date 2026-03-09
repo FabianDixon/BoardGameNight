@@ -1,6 +1,7 @@
 // src/components/GroupDetail.jsx
 import { useMemo, useState } from "react";
 import GameTile from "./GameTile";
+import { GROUP_TAB, POOL_FILTER } from "../constants/workflow";
 
 export default function GroupDetail({
   group,
@@ -23,7 +24,7 @@ export default function GroupDetail({
 
   // Filter group collection by pool membership (🎲)
   // all | in | out
-  const [poolFilter, setPoolFilter] = useState("all");
+  const [poolFilter, setPoolFilter] = useState(POOL_FILTER.ALL);
   const [manageBusyId, setManageBusyId] = useState(null);
   const [manageQuery, setManageQuery] = useState("");
 
@@ -35,8 +36,8 @@ export default function GroupDetail({
 
   const filteredGames = useMemo(() => {
     const arr = groupGames || [];
-    if (poolFilter === "in") return arr.filter((g) => !!g.isActiveInPool);
-    if (poolFilter === "out") return arr.filter((g) => !g.isActiveInPool);
+    if (poolFilter === POOL_FILTER.IN_POOL) return arr.filter((g) => !!g.isActiveInPool);
+    if (poolFilter === POOL_FILTER.OUT_OF_POOL) return arr.filter((g) => !g.isActiveInPool);
     return arr;
   }, [groupGames, poolFilter]);
 
@@ -91,18 +92,18 @@ export default function GroupDetail({
         <div className="mt-4 flex gap-2 flex-wrap">
           <button
             className={`px-3 py-2 rounded-full border ${
-              groupTab === "collection" ? "bg-gray-100" : "bg-white"
+              groupTab === GROUP_TAB.COLLECTION ? "bg-gray-100" : "bg-white"
             }`}
-            onClick={() => setGroupTab("collection")}
+            onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
             type="button"
           >
             Collection
           </button>
           <button
             className={`px-3 py-2 rounded-full border ${
-              groupTab === "voting" ? "bg-gray-100" : "bg-white"
+              groupTab === GROUP_TAB.VOTING ? "bg-gray-100" : "bg-white"
             }`}
-            onClick={() => setGroupTab("voting")}
+            onClick={() => setGroupTab(GROUP_TAB.VOTING)}
             type="button"
           >
             Voting
@@ -110,9 +111,9 @@ export default function GroupDetail({
           {settingsNode && (
             <button
               className={`px-3 py-2 rounded-full border ${
-                groupTab === "settings" ? "bg-gray-100" : "bg-white"
+                groupTab === GROUP_TAB.SETTINGS ? "bg-gray-100" : "bg-white"
               }`}
-              onClick={() => setGroupTab("settings")}
+              onClick={() => setGroupTab(GROUP_TAB.SETTINGS)}
               type="button"
             >
               Settings
@@ -121,7 +122,7 @@ export default function GroupDetail({
         </div>
       </div>
 
-      {groupTab === "collection" && (
+      {groupTab === GROUP_TAB.COLLECTION && (
         <div className="bg-white p-4 rounded-2xl shadow border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xl font-semibold">Group collection</h3>
@@ -131,7 +132,7 @@ export default function GroupDetail({
                 <button
                   type="button"
                   className="px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
-                  onClick={() => setGroupTab("manage")}
+                  onClick={() => setGroupTab(GROUP_TAB.MANAGE)}
                   title="Choose which games from your library are shared with this group"
                 >
                   Manage my games
@@ -148,9 +149,9 @@ export default function GroupDetail({
             <button
               type="button"
               className={`px-3 py-1.5 rounded-full border text-sm ${
-                poolFilter === "all" ? "bg-gray-100" : "bg-white"
+                poolFilter === POOL_FILTER.ALL ? "bg-gray-100" : "bg-white"
               }`}
-              onClick={() => setPoolFilter("all")}
+              onClick={() => setPoolFilter(POOL_FILTER.ALL)}
               title="Show all games"
             >
               All ({poolCounts.total})
@@ -159,9 +160,9 @@ export default function GroupDetail({
             <button
               type="button"
               className={`px-3 py-1.5 rounded-full border text-sm ${
-                poolFilter === "in" ? "bg-gray-100" : "bg-white"
+                poolFilter === POOL_FILTER.IN_POOL ? "bg-gray-100" : "bg-white"
               }`}
-              onClick={() => setPoolFilter("in")}
+              onClick={() => setPoolFilter(POOL_FILTER.IN_POOL)}
               title="Show games that are already in the pool"
             >
               🎲 In pool ({poolCounts.inPool})
@@ -170,9 +171,9 @@ export default function GroupDetail({
             <button
               type="button"
               className={`px-3 py-1.5 rounded-full border text-sm ${
-                poolFilter === "out" ? "bg-gray-100" : "bg-white"
+                poolFilter === POOL_FILTER.OUT_OF_POOL ? "bg-gray-100" : "bg-white"
               }`}
-              onClick={() => setPoolFilter("out")}
+              onClick={() => setPoolFilter(POOL_FILTER.OUT_OF_POOL)}
               title="Show games that are not in the pool"
             >
               Not in pool ({poolCounts.outPool})
@@ -231,7 +232,7 @@ export default function GroupDetail({
         </div>
       )}
 
-      {groupTab === "manage" && (
+      {groupTab === GROUP_TAB.MANAGE && (
         <div className="bg-white p-4 rounded-2xl shadow border">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
@@ -244,7 +245,7 @@ export default function GroupDetail({
             <button
               type="button"
               className="px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
-              onClick={() => setGroupTab("collection")}
+              onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
               disabled={!!manageBusyId}
             >
               Back to collection
@@ -305,8 +306,8 @@ export default function GroupDetail({
         </div>
       )}
 
-      {groupTab === "voting" && votingNode}
-      {groupTab === "settings" && settingsNode}
+      {groupTab === GROUP_TAB.VOTING && votingNode}
+      {groupTab === GROUP_TAB.SETTINGS && settingsNode}
     </div>
   );
 }

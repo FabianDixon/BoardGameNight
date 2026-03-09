@@ -1,5 +1,4 @@
 // src/components/GameDetail.jsx
-import React from "react";
 import CollectionToggle from "./CollectionToggle";
 import StarRating from "./StarRating";
 

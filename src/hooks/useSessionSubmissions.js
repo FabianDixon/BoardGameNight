@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
+import { VOTE_STATUS } from "../constants/workflow";
 
 /**
  * Subscribe to session submissions during the collecting phase.
@@ -16,7 +17,7 @@ export function useSessionSubmissions(currentGroupId, activeVoteId, activeVoteSt
   const [sessionSubmissions, setSessionSubmissions] = useState([]);
 
   useEffect(() => {
-    if (!currentGroupId || !activeVoteId || activeVoteStatus !== "collecting" || !groupAccessReady) {
+    if (!currentGroupId || !activeVoteId || activeVoteStatus !== VOTE_STATUS.COLLECTING || !groupAccessReady) {
       return;
     }
 
