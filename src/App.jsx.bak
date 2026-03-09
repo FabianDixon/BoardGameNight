@@ -106,8 +106,6 @@ export default function App() {
 
   const [myGroups, setMyGroups] = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState("");
-  const [groupAccessReady, setGroupAccessReady] = useState(false);
-
   const members = useGroupMembers(user, currentGroupId, groupAccessReady);
 
   const [groupView, setGroupView] = useState("picker"); // "picker" | "detail"
@@ -118,15 +116,6 @@ export default function App() {
   const groupSettings = useGroupSettings(user, currentGroupId, groupAccessReady);
 
   const votes = useGroupVotes(currentGroupId, groupAccessReady);
-
-  const activeVote = useMemo(() => {
-    if (!votes.length) return null;
-    return (
-      votes.find(v => v.status === "collecting") ||
-      votes.find(v => v.status === "open") ||
-      votes[0] // last closed (latest)
-    );
-  }, [votes]);
 
   const { myBallot, voteBallots } = useVoteBallots(user, currentGroupId, activeVote?.id, groupAccessReady);
 
@@ -163,10 +152,21 @@ export default function App() {
 
   const [returnCtx, setReturnCtx] = useState(null);
 
+  const [groupAccessReady, setGroupAccessReady] = useState(false);
+
   const currentGroup = useMemo(
     () => myGroups.find((g) => g.id === currentGroupId) || null,
     [myGroups, currentGroupId]
   );
+
+  const activeVote = useMemo(() => {
+    if (!votes.length) return null;
+    return (
+      votes.find(v => v.status === "collecting") ||
+      votes.find(v => v.status === "open") ||
+      votes[0] // last closed (latest)
+    );
+  }, [votes]);
 
   const canManageSession = useMemo(() => {
     if (!user || !activeVote) return false;
@@ -266,6 +266,71 @@ export default function App() {
 
   // --- Ballots for active vote ---
 
+  useEffect(() => {
+    if (!currentGroupId || !groupAccessReady) {
+      setPoolDocs([]);
+      return;
+    }
+  
+    const ref = collection(db, "groups", currentGroupId, "pool");
+  
+    return onSnapshot(ref, (snap) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  
+      // Optional: sort, but don’t depend on the field existing
+      docs.sort((a, b) => {
+        const ax = typeof a.cycleStartedAt === "number" ? a.cycleStartedAt : Number.MAX_SAFE_INTEGER;
+        const bx = typeof b.cycleStartedAt === "number" ? b.cycleStartedAt : Number.MAX_SAFE_INTEGER;
+        return ax - bx;
+      });
+  
+      setPoolDocs(docs);
+    });
+  }, [currentGroupId, groupAccessReady]);
+
+    // --- All submissions for active vote (collecting phase) ---
+  useEffect(() => {
+    if (!currentGroupId || !activeVote?.id || activeVote?.status !== "collecting" || !groupAccessReady) {
+      setSessionSubmissions([]);
+      return;
+    }
+
+    const ref = collection(
+      db,
+      "groups",
+      currentGroupId,
+      "votes",
+      activeVote.id,
+      "submissions"
+    );
+
+    return onSnapshot(ref, (snap) => {
+      setSessionSubmissions(
+        snap.docs.map((d) => ({ userId: d.id, ...d.data() }))
+      );
+    });
+  }, [currentGroupId, activeVote?.id, activeVote?.status, groupAccessReady]);
+
+  useEffect(() => {
+    if (!user?.uid || !currentGroupId || !activeVote?.id || !groupAccessReady) {
+      setMySubmissionGameId(null);
+      return;
+    }
+
+    const ref = doc(
+      db,
+      "groups",
+      currentGroupId,
+      "votes",
+      activeVote.id,
+      "submissions",
+      user.uid
+    );
+
+    return onSnapshot(ref, (snap) => {
+      setMySubmissionGameId(snap.exists() ? snap.data()?.gameId ?? null : null);
+    });
+  }, [user?.uid, currentGroupId, activeVote?.id, groupAccessReady]);
 
   useEffect(() => {
     if (activeTab !== "group") return;
