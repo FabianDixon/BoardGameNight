@@ -1,0 +1,484 @@
+rules_version = '2';
+service cloud.firestore {
+match /databases/{database}/documents {
+
+function signedIn() {
+  return request.auth != null;
+}
+
+function isSelf(userId) {
+  return signedIn() && request.auth.uid == userId;
+}
+
+function isGroupMember(groupId) {
+  return signedIn() &&
+    exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+}
+
+function groupOwnerId(groupId) {
+  return get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId;
+}
+
+function isGroupOwner(groupId) {
+  return signedIn() && groupOwnerId(groupId) == request.auth.uid;
+}
+
+// --- group meta helpers (settings/meta) ---
+function metaPath(groupId) {
+  return /databases/$(database)/documents/groups/$(groupId)/settings/meta;
+}
+
+function metaExists(groupId) {
+  return exists(metaPath(groupId));
+}
+
+function metaDoc(groupId) {
+  return get(metaPath(groupId)).data;
+}
+
+function memberRole(groupId) {
+  return get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role;
+}
+
+function moderatorsCanEditWeights(groupId) {
+  return metaExists(groupId) && metaDoc(groupId).moderatorsCanEditWeights == true;
+}
+
+function canEditWeights(groupId) {
+  return isGroupOwner(groupId)
+    || (isGroupMember(groupId) && memberRole(groupId) == "moderator" && moderatorsCanEditWeights(groupId));
+}
+
+// -------------------------
+// Global games catalog
+// -------------------------
+match /games/{gameId} {
+  allow read: if true;
+
+  allow create: if signedIn()
+    && request.resource.data.keys().hasAll([
+      'title','description','createdAt','ratingTotal','ratingCount','createdBy'
+    ])
+    && request.resource.data.createdBy == request.auth.uid
+    && request.resource.data.ratingTotal is number
+    && request.resource.data.ratingCount is number;
+
+  allow update: if signedIn() && (
+    (
+      request.resource.data.diff(resource.data).changedKeys()
+        .hasOnly(['title', 'description', 'imageUrl', 'updatedAt'])
+      && request.resource.data.title is string
+      && request.resource.data.description is string
+      && (
+        !('imageUrl' in request.resource.data) || request.resource.data.imageUrl is string
+      )
+      && (
+        !('updatedAt' in request.resource.data) || request.resource.data.updatedAt is number
+      )
+    )
+    || (
+      request.resource.data.diff(resource.data).changedKeys()
+        .hasOnly(['ratingTotal', 'ratingCount'])
+      && request.resource.data.ratingTotal is number
+      && request.resource.data.ratingCount is number
+    )
+  );
+
+  allow delete: if signedIn();
+}
+
+// -------------------------
+// Ratings (global per game)
+// -------------------------
+match /ratings/{ratingId} {
+  allow read: if true;
+
+  allow create, update, delete: if signedIn()
+    && ratingId.matches('^' + request.auth.uid + '_.*')
+    && request.resource.data.userId == request.auth.uid
+    && request.resource.data.value is number
+    && request.resource.data.value >= 0.5
+    && request.resource.data.value <= 5;
+}
+
+// -------------------------
+// User profile
+// -------------------------
+match /users/{userId} {
+  allow read, write: if isSelf(userId);
+}
+
+match /users/{userId}/collection/{gameId} {
+  allow read, write: if isSelf(userId);
+}
+
+match /users/{userId}/groups/{groupId} {
+  allow read, write: if isSelf(userId);
+}
+
+// -------------------------
+// Groups
+// -------------------------
+match /groups/{groupId} {
+  allow read: if signedIn();
+
+  allow create: if signedIn()
+    && request.resource.data.ownerId == request.auth.uid
+    && request.resource.data.keys().hasAll(['name','ownerId','createdAt']);
+
+  allow update, delete: if signedIn()
+    && resource.data.ownerId == request.auth.uid;
+}
+
+// -------------------------
+// Group membership
+// -------------------------
+match /groups/{groupId}/members/{userId} {
+  allow read: if isGroupMember(groupId)
+    || (isSelf(userId) && exists(/databases/$(database)/documents/groups/$(groupId)));
+
+  allow create: if signedIn()
+    && request.auth.uid == userId
+    && exists(/databases/$(database)/documents/groups/$(groupId));
+
+  allow update: if signedIn() && (
+    request.auth.uid == userId
+    || isGroupOwner(groupId)
+  );
+
+  allow delete: if signedIn() && (
+    request.auth.uid == userId
+    || isGroupOwner(groupId)
+  );
+}
+
+// -------------------------
+// Group collection (materialized union)
+// -------------------------
+match /groups/{groupId}/games/{gameId} {
+  allow read: if isGroupMember(groupId);
+  allow create, update, delete: if isGroupMember(groupId);
+}
+
+match /groups/{groupId}/games/{gameId}/owners/{userId} {
+  allow read: if isGroupMember(groupId);
+  allow create, update, delete: if isGroupMember(groupId) && isSelf(userId);
+}
+
+// -------------------------
+// Group Settings
+// -------------------------
+match /groups/{groupId}/settings/{docId} {
+  allow read: if isGroupMember(groupId);
+
+  allow create, update, delete: if isGroupOwner(groupId) && docId == "meta";
+  allow create, update, delete: if docId == "weights" && canEditWeights(groupId);
+}
+
+// -------------------------
+// Active Session doc
+// -------------------------
+match /groups/{groupId}/activeSession/{docId} {
+  allow read: if isGroupMember(groupId);
+
+  allow create: if isGroupMember(groupId)
+    && request.resource.data.ownerId == request.auth.uid;
+
+  function changedKeys() {
+    return request.resource.data.diff(resource.data).changedKeys();
+  }
+
+  function isMemberOpenStatusUpdate() {
+    return docId == "meta"
+      && resource.data.status == "collecting"
+      && request.resource.data.status == "open"
+      && changedKeys().hasOnly(["status", "updatedAt"])
+      && request.resource.data.updatedAt is number;
+  }
+
+  function isMemberClearOnClose() {
+    return docId == "meta"
+      && resource.data.status == "open"
+      && request.resource.data.status == null
+      && request.resource.data.activeVoteId == null
+      && changedKeys().hasOnly(["status", "activeVoteId", "sessionIndex", "updatedAt"])
+      && request.resource.data.updatedAt is number
+      && request.resource.data.sessionIndex == resource.data.sessionIndex + 1;
+  }
+
+  allow update: if isGroupMember(groupId) && (
+    isGroupOwner(groupId)
+    || resource.data.ownerId == request.auth.uid
+    || (
+      resource.data.status == null
+      && resource.data.activeVoteId == null
+      && request.resource.data.ownerId == request.auth.uid
+    )
+    || isMemberOpenStatusUpdate()
+    || isMemberClearOnClose()
+  );
+
+  allow delete: if false;
+}
+
+// -------------------------
+// Vote Pool (persistent queue)
+// -------------------------
+match /groups/{groupId}/pool/{gameId} {
+  allow read: if isGroupMember(groupId);
+
+  function metaPath() {
+    return /databases/$(database)/documents/groups/$(groupId)/activeSession/meta;
+  }
+
+  function metaExists() {
+    return exists(metaPath());
+  }
+
+  function metaStatus() {
+    return get(metaPath()).data.status;
+  }
+
+  function isSessionOwner() {
+    return metaExists()
+      && signedIn()
+      && get(metaPath()).data.ownerId == request.auth.uid;
+  }
+
+  function isOwnerPlayedOverrideOnlyCreate() {
+    return isGroupOwner(groupId)
+      && request.resource.data.keys().hasOnly(["playedOverride"])
+      && request.resource.data.playedOverride is bool;
+  }
+
+  function isOwnerPlayedOverrideOnlyUpdate() {
+    return isGroupOwner(groupId)
+      && request.writeFields.hasOnly(["playedOverride"])
+      && request.resource.data.playedOverride is bool;
+  }
+
+  function isActivationCreate() {
+    return metaExists()
+      && metaStatus() == "collecting"
+      && request.resource.data.keys().hasOnly([
+        "isActive",
+        "addedAt",
+        "cycleStartedAt",
+        "cycleVoteCount",
+        "cycleStartedSession"
+      ])
+      && request.resource.data.isActive == true
+      && request.resource.data.cycleVoteCount == 0;
+  }
+
+  function isActivationUpdate() {
+    return metaExists()
+      && metaStatus() == "collecting"
+      && (
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "isActive",
+          "cycleStartedAt",
+          "cycleVoteCount",
+          "cycleStartedSession"
+        ])
+        || request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "isActive",
+          "addedAt",
+          "cycleStartedAt",
+          "cycleVoteCount",
+          "cycleStartedSession"
+        ])
+        || (
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "isActive",
+            "addedAt",
+            "cycleStartedAt",
+            "cycleVoteCount",
+            "cycleStartedSession",
+            "playedOverride"
+          ])
+          && request.resource.data.playedOverride == resource.data.playedOverride
+        )
+      )
+      && request.resource.data.isActive == true
+      && request.resource.data.cycleVoteCount == 0
+      && request.resource.data.cycleStartedAt is number
+      && request.resource.data.cycleStartedSession is number
+      && (
+        !("addedAt" in request.resource.data.diff(resource.data).changedKeys())
+        || request.resource.data.addedAt is number
+      );
+  }
+
+  function isMemberStatsUpdate() {
+    return isGroupMember(groupId)
+      && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        "lastVotedAt",
+        "cycleVoteCount",
+        "lifetimeVoteCount",
+        "lastWonAt",
+        "lastWonSession",
+        "playedCount",
+        "lastPlayedAt",
+        "isActive"
+      ])
+      && (!("lastVotedAt" in request.resource.data) || request.resource.data.lastVotedAt is number)
+      && (!("lastWonAt" in request.resource.data) || request.resource.data.lastWonAt is number)
+      && (!("cycleVoteCount" in request.resource.data) || request.resource.data.cycleVoteCount is number)
+      && (!("lifetimeVoteCount" in request.resource.data) || request.resource.data.lifetimeVoteCount is number)
+      && (!("playedCount" in request.resource.data) || request.resource.data.playedCount is number)
+      && (!("lastPlayedAt" in request.resource.data) || request.resource.data.lastPlayedAt is number)
+      && (!("lastWonSession" in request.resource.data) || request.resource.data.lastWonSession is number)
+      && (!("isActive" in request.resource.data) || request.resource.data.isActive is bool);
+  }
+
+  allow create: if isGroupMember(groupId) && (
+    isActivationCreate()
+    || isOwnerPlayedOverrideOnlyCreate()
+  );
+
+  allow update: if isGroupMember(groupId) && (
+    isActivationUpdate()
+    || (
+      (isSessionOwner() || isGroupOwner(groupId))
+      && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        "lastVotedAt",
+        "cycleVoteCount",
+        "lifetimeVoteCount",
+        "lastWonAt",
+        "lastWonSession",
+        "playedCount",
+        "lastPlayedAt",
+        "isActive"
+      ])
+    )
+    || isMemberStatsUpdate()
+    || isOwnerPlayedOverrideOnlyUpdate()
+  );
+
+  allow delete: if false;
+}
+
+// -------------------------
+// Plays log
+// -------------------------
+match /groups/{groupId}/plays/{playId} {
+  allow read: if isGroupMember(groupId);
+  allow create: if isGroupMember(groupId);
+  allow update, delete: if false;
+}
+
+// -------------------------
+// Voting (sessions)
+// -------------------------
+match /groups/{groupId}/votes/{voteId} {
+  allow read: if isGroupMember(groupId);
+
+  allow create: if isGroupMember(groupId)
+    && request.resource.data.createdBy == request.auth.uid
+    && (request.resource.data.status == "collecting" || request.resource.data.status == "open");
+
+  function changedKeys() {
+    return request.resource.data.diff(resource.data).changedKeys();
+  }
+
+  function isStartVotingUpdate() {
+    return resource.data.status == "collecting"
+      && request.resource.data.status == "open"
+      && changedKeys().hasOnly(["status", "openedAt", "candidates"])
+      && request.resource.data.openedAt is number
+      && request.resource.data.candidates is list
+      && request.resource.data.candidates.size() > 0
+      && request.resource.data.candidates.size() <= 200;
+  }
+
+  function isCloseVoteUpdate() {
+    return resource.data.status == "open"
+      && request.resource.data.status == "closed"
+      && changedKeys().hasOnly([
+        "status",
+        "closedAt",
+        "winnerGameId",
+        "scoreBreakdown",
+        "weightsUsed"
+      ])
+      && request.resource.data.closedAt is number
+      && (request.resource.data.winnerGameId == null || request.resource.data.winnerGameId is string)
+      && (request.resource.data.scoreBreakdown == null || request.resource.data.scoreBreakdown is list)
+      && (request.resource.data.weightsUsed == null || request.resource.data.weightsUsed is map);
+  }
+
+  allow update: if isGroupMember(groupId) && (
+    isStartVotingUpdate()
+    || isCloseVoteUpdate()
+    || (request.auth.uid == resource.data.createdBy || isGroupOwner(groupId))
+  );
+
+  allow delete: if false;
+}
+
+// -------------------------
+// Submissions: ONE doc per user per vote
+// -------------------------
+match /groups/{groupId}/votes/{voteId}/submissions/{userId} {
+  allow read: if isGroupMember(groupId);
+
+  function voteStatus() {
+    return get(/databases/$(database)/documents/groups/$(groupId)/votes/$(voteId)).data.status;
+  }
+
+  function isGameSubmission() {
+    return request.resource.data.keys().hasOnly(["gameId", "submittedAt"])
+      && request.resource.data.gameId is string
+      && request.resource.data.submittedAt is number;
+  }
+
+  function isNoSubmissionRecord() {
+    return request.resource.data.keys().hasOnly(["isNoSubmission", "submittedAt"])
+      && request.resource.data.isNoSubmission == true
+      && request.resource.data.submittedAt is number;
+  }
+
+  allow create, update, delete: if isGroupMember(groupId)
+    && isSelf(userId)
+    && voteStatus() == "collecting"
+    && (isGameSubmission() || isNoSubmissionRecord());
+}
+
+// -------------------------
+// Ballots
+// -------------------------
+match /groups/{groupId}/votes/{voteId}/ballots/{userId} {
+  allow read: if isGroupMember(groupId);
+
+  function voteDoc() {
+    return get(/databases/$(database)/documents/groups/$(groupId)/votes/$(voteId)).data;
+  }
+
+  function disallowOwnSubmission(groupId) {
+    return metaExists(groupId) && metaDoc(groupId).disallowVotingOwnSubmission == true;
+  }
+
+  function votedGameIsCandidate(gameId) {
+    return voteDoc().candidates.hasAny([gameId]);
+  }
+
+  function mySubmissionGameId() {
+    return get(/databases/$(database)/documents/groups/$(groupId)/votes/$(voteId)/submissions/$(userId)).data.gameId;
+  }
+
+  function isVotingOwnSubmission(gameId) {
+    return exists(/databases/$(database)/documents/groups/$(groupId)/votes/$(voteId)/submissions/$(userId))
+      && mySubmissionGameId() == gameId;
+  }
+
+  allow create, update, delete: if isGroupMember(groupId)
+    && isSelf(userId)
+    && voteDoc().status == "open"
+    && request.resource.data.keys().hasOnly(["gameId", "submittedAt"])
+    && votedGameIsCandidate(request.resource.data.gameId)
+    && (!disallowOwnSubmission(groupId) || !isVotingOwnSubmission(request.resource.data.gameId));
+}
+
+}
+}

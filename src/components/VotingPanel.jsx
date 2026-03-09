@@ -92,6 +92,7 @@ function VotingPanelInner({
 
   onCallSession,
   onSubmitGame,
+  onSubmitNoSubmission,
   onStartVoting,
   onCastVote,
   onCloseVote,
@@ -125,10 +126,24 @@ function VotingPanelInner({
     const x = mySubmissionGameId;
     if (!x) return null;
 
-    // if parent accidentally passes the whole submission doc shape
+    // if parent passes the new object shape { gameId, isNoSubmission, exists }
+    if (typeof x === "object" && "exists" in x) {
+      return x.gameId ? String(x.gameId).trim() : null;
+    }
+
+    // legacy: if parent accidentally passes the whole submission doc shape
     if (typeof x === "object" && "gameId" in x) return String(x.gameId).trim();
 
     return String(x).trim();
+  }, [mySubmissionGameId]);
+
+  const isNoSubmission = useMemo(() => {
+    const x = mySubmissionGameId;
+    if (!x) return false;
+    if (typeof x === "object" && "isNoSubmission" in x) {
+      return x.isNoSubmission === true;
+    }
+    return false;
   }, [mySubmissionGameId]);
 
   const candidateIdsNormalized = useMemo(() => {
@@ -198,7 +213,7 @@ function VotingPanelInner({
   const canSubmit = !!user && !!currentGroupId && status === VOTE_STATUS.COLLECTING;
   const canVote = !!user && !!currentGroupId && status === VOTE_STATUS.OPEN;
 
-  const alreadySubmitted = !!mySubId;
+  const hasSubmitted = !!mySubId || isNoSubmission;
   const alreadyVoted = !!myBallot?.gameId;
 
   const disallowOwnSubmissionVote =
@@ -211,7 +226,7 @@ function VotingPanelInner({
 
   const effectiveSelectedVoteId = selectedVoteStillAvailable ? selectedVoteId : null;
 
-  const submitDisabled = !canSubmit || alreadySubmitted || !effectiveSelectedSubmissionId;
+  const submitDisabled = !canSubmit || !effectiveSelectedSubmissionId;
 
   const voteDisabled =
     !canVote ||
@@ -275,7 +290,13 @@ function VotingPanelInner({
               </span>
             </span>
 
-            {alreadySubmitted && (
+            {isNoSubmission && (
+              <span className="px-2 py-1 rounded-full border bg-blue-50 text-blue-800">
+                ⊗ No Submission
+              </span>
+            )}
+
+            {mySubId && !isNoSubmission && (
               <span className="px-2 py-1 rounded-full border bg-green-50 text-green-800">
                 ✅ Submitted
               </span>
@@ -361,7 +382,11 @@ function VotingPanelInner({
           <div className="mt-4 text-sm text-gray-700">
             Your submission:{" "}
             <span className="font-semibold">
-              {mySubId ? titleById(gameMap, mySubId) : "—"}
+              {isNoSubmission
+                ? "No Submission"
+                : mySubId
+                ? titleById(gameMap, mySubId)
+                : "—"}
             </span>
           </div>
         )}
@@ -380,8 +405,18 @@ function VotingPanelInner({
         <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold">Submit one game</h3>
           <p className="text-sm text-gray-600">
-            Select a game, then press <span className="font-semibold">Submit</span>. You can only submit once.
+            Select a game and press <span className="font-semibold">Submit</span>, or choose{" "}
+            <span className="font-semibold">No Submission</span> if you don't want to submit a game this round.
           </p>
+
+          <button
+            type="button"
+            onClick={onSubmitNoSubmission}
+            disabled={!canSubmit}
+            className="w-full px-4 py-3 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition text-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ⊗ {isNoSubmission ? "Already marked as no submission" : "No Submission"}
+          </button>
 
           <input
             type="text"
@@ -403,12 +438,11 @@ function VotingPanelInner({
                   key={g.id}
                   game={g}
                   selected={selected}
-                  disabled={alreadySubmitted}
+                  disabled={false}
                   showNew={false} // optionally wire group-newness later
                   inPool={false}  // collecting list already excludes pool games
                   isMine={false} // all games in collecting phase are by definition not mine
                   onClick={() => {
-                    if (alreadySubmitted) return;
                     setSelectedSubmissionId(g.id);
                   }}
                 />
@@ -525,11 +559,11 @@ function VotingPanelInner({
       <Fab
         show={activeVote?.status === VOTE_STATUS.COLLECTING}
         variant="pill"
-        label={alreadySubmitted ? "Submitted" : "Submit"}
+        label={hasSubmitted ? "Change Submission" : "Submit"}
         disabled={submitDisabled}
         onClick={handleSubmit}
       >
-        Submit
+        {hasSubmitted ? "Change" : "Submit"}
       </Fab>
 
       <Fab

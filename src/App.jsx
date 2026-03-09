@@ -1441,6 +1441,8 @@ export default function App() {
     const voteRef = doc(db, "groups", currentGroupId, "votes", activeVote.id);
     const metaRef = doc(db, "groups", currentGroupId, "activeSession", "meta");
 
+    let oldGameIdToReconcile = null;
+
     try {
       await runTransaction(db, async (tx) => {
         const [voteSnap, metaSnap, subSnap, poolSnap] = await Promise.all([
@@ -1461,14 +1463,15 @@ export default function App() {
           throw new Error("NOT_COLLECTING");
         }
 
-        // One submission per user per session
-        if (subSnap.exists()) {
-          throw new Error("ALREADY_SUBMITTED");
-        }
+        // During COLLECTING, user can change their submission
+        // Get current submission if any
+        const currentSubmission = subSnap.exists() ? subSnap.data() : null;
+        const currentGameId = currentSubmission?.gameId || null;
 
-        // Don’t allow selecting a game already active in pool
+        // Don't allow selecting a game already active in pool
+        // UNLESS it's the same game the user already submitted (allows no-op resubmit)
         const poolData = poolSnap.exists() ? (poolSnap.data() || {}) : null;
-        if (poolData?.isActive === true) {
+        if (poolData?.isActive === true && gid !== currentGameId) {
           throw new Error("ALREADY_IN_POOL");
         }
 
@@ -1479,7 +1482,7 @@ export default function App() {
         // Write submission
         tx.set(submissionRef, { gameId: gid, submittedAt: now }, { merge: false });
 
-        // Activate / repair pool doc
+        // Activate / repair pool doc for new game
         const needsAddedAt = !poolSnap.exists() || poolData?.addedAt == null;
 
         tx.set(
@@ -1493,7 +1496,37 @@ export default function App() {
           },
           { merge: true }
         );
+
+        // Store old game ID for post-transaction reconciliation
+        if (currentGameId && currentGameId !== gid) {
+          oldGameIdToReconcile = currentGameId;
+        }
       });
+
+      // After transaction commits, reconcile old game pool status
+      if (oldGameIdToReconcile) {
+        try {
+          const allSubmissionsSnap = await getDocs(
+            collection(db, "groups", currentGroupId, "votes", activeVote.id, "submissions")
+          );
+
+          const otherStillReferencesOldGame = allSubmissionsSnap.docs.some((doc) => {
+            // Skip current user's submission (we just changed it)
+            if (doc.id === user.uid) return false;
+            const data = doc.data();
+            return data?.gameId === oldGameIdToReconcile;
+          });
+
+          // If no other submission references the old game, deactivate it
+          if (!otherStillReferencesOldGame) {
+            const oldPoolRef = doc(db, "groups", currentGroupId, "pool", oldGameIdToReconcile);
+            await updateDoc(oldPoolRef, { isActive: false });
+          }
+        } catch (reconcileError) {
+          // Log but don't fail the whole operation - reconciliation is best-effort cleanup
+          console.warn("Pool reconciliation failed (non-critical):", reconcileError);
+        }
+      }
 
       showToast("Game submitted ✅", "success");
     } catch (e) {
@@ -1501,15 +1534,114 @@ export default function App() {
 
       // Friendly messages for our intentional throws
       const msg =
-        e?.message === "ALREADY_SUBMITTED"
-          ? "You already submitted a game for this session."
-          : e?.message === "ALREADY_IN_POOL"
+        e?.message === "ALREADY_IN_POOL"
           ? "That game is already active in the pool."
           : e?.message === "NOT_COLLECTING"
           ? "Submissions are closed."
           : e?.code === "permission-denied"
           ? "Missing or insufficient permissions."
           : e?.message || "Failed to submit game.";
+
+      showToast(msg, "error");
+    }
+  }
+
+  async function submitNoSubmission() {
+    if (!user || !currentGroupId || !activeVote?.id) return;
+
+    if (activeVote.status !== VOTE_STATUS.COLLECTING) {
+      showToast("Submissions are closed.", "error");
+      return;
+    }
+
+    const now = Date.now();
+
+    const submissionRef = doc(
+      db,
+      "groups",
+      currentGroupId,
+      "votes",
+      activeVote.id,
+      "submissions",
+      user.uid
+    );
+
+    const voteRef = doc(db, "groups", currentGroupId, "votes", activeVote.id);
+    const metaRef = doc(db, "groups", currentGroupId, "activeSession", "meta");
+
+    let oldGameIdToReconcile = null;
+
+    try {
+      await runTransaction(db, async (tx) => {
+        const [voteSnap, metaSnap, subSnap] = await Promise.all([
+          tx.get(voteRef),
+          tx.get(metaRef),
+          tx.get(submissionRef),
+        ]);
+
+        // Must be collecting (server truth)
+        const voteStatus = voteSnap.exists() ? voteSnap.data()?.status : null;
+        if (voteStatus !== VOTE_STATUS.COLLECTING) {
+          throw new Error("NOT_COLLECTING");
+        }
+
+        const metaStatus = metaSnap.exists() ? metaSnap.data()?.status : null;
+        if (metaStatus && metaStatus !== VOTE_STATUS.COLLECTING) {
+          throw new Error("NOT_COLLECTING");
+        }
+
+        // Get current submission to check if we need to deactivate an old game
+        const currentSubmission = subSnap.exists() ? subSnap.data() : null;
+        const currentGameId = currentSubmission?.gameId || null;
+
+        // Write no-submission marker (overwrites previous submission if any)
+        tx.set(
+          submissionRef,
+          { isNoSubmission: true, submittedAt: now },
+          { merge: false }
+        );
+
+        // Store old game ID for post-transaction reconciliation
+        if (currentGameId) {
+          oldGameIdToReconcile = currentGameId;
+        }
+      });
+
+      // After transaction commits, reconcile old game pool status
+      if (oldGameIdToReconcile) {
+        try {
+          const allSubmissionsSnap = await getDocs(
+            collection(db, "groups", currentGroupId, "votes", activeVote.id, "submissions")
+          );
+
+          const otherStillReferencesOldGame = allSubmissionsSnap.docs.some((doc) => {
+            // Skip current user's submission (we just changed it)
+            if (doc.id === user.uid) return false;
+            const data = doc.data();
+            return data?.gameId === oldGameIdToReconcile;
+          });
+
+          // If no other submission references the old game, deactivate it
+          if (!otherStillReferencesOldGame) {
+            const oldPoolRef = doc(db, "groups", currentGroupId, "pool", oldGameIdToReconcile);
+            await updateDoc(oldPoolRef, { isActive: false });
+          }
+        } catch (reconcileError) {
+          // Log but don't fail the whole operation - reconciliation is best-effort cleanup
+          console.warn("Pool reconciliation failed (non-critical):", reconcileError);
+        }
+      }
+
+      showToast("Marked as no submission ✓", "success");
+    } catch (e) {
+      console.error("submitNoSubmission failed:", e);
+
+      const msg =
+        e?.message === "NOT_COLLECTING"
+          ? "Submissions are closed."
+          : e?.code === "permission-denied"
+          ? "Missing or insufficient permissions."
+          : e?.message || "Failed to mark no submission.";
 
       showToast(msg, "error");
     }
@@ -2035,6 +2167,7 @@ export default function App() {
                         results={voteResults}
                         onCallSession={callSession}
                         onSubmitGame={submitToSession}
+                        onSubmitNoSubmission={submitNoSubmission}
                         onStartVoting={startVoting}
                         onCastVote={castVote}
                         onCloseVote={closeVote}
