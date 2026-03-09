@@ -161,10 +161,16 @@ export default function App() {
 
   const [returnCtx, setReturnCtx] = useState(null);
 
+  // Derived: current group document (null if not found)
+  // NOTE: Can be null if currentGroupId is set but group was removed from myGroups.
+  // All permission checks must handle null gracefully.
   const currentGroup = useMemo(
     () => myGroups.find((g) => g.id === currentGroupId) || null,
     [myGroups, currentGroupId]
   );
+
+  // Derived: whether we have a valid, loaded group currently selected
+  const hasValidGroupSelection = Boolean(currentGroupId && currentGroup);
 
   const canManageSession = useMemo(() => {
     if (!user || !activeVote) return false;
@@ -286,19 +292,40 @@ export default function App() {
   // --- Ballots for active vote ---
 
 
+  // Validated group selection helper - ensures group exists before setting
+  const selectGroup = useCallback((groupId) => {
+    if (!groupId) {
+      setCurrentGroupId("");
+      return;
+    }
+
+    const isValid = myGroups.some((g) => g.id === groupId);
+    if (isValid) {
+      setCurrentGroupId(groupId);
+    } else {
+      console.warn("Attempted to select invalid group ID:", groupId);
+    }
+  }, [myGroups]);
+
+  // Guard: if on group detail view but no valid group selected, return to picker
+  // (handles edge case: user's last group was removed, or direct navigation to detail with no group)
   useEffect(() => {
     if (activeTab !== APP_TAB.GROUP) return;
 
-    if (groupView === GROUP_VIEW.DETAIL && !currentGroupId) {
+    if (groupView === GROUP_VIEW.DETAIL && !hasValidGroupSelection) {
       setGroupView(GROUP_VIEW.PICKER);
     }
-  }, [activeTab, groupView, currentGroupId]);
+  }, [activeTab, groupView, hasValidGroupSelection]);
 
+  // Sync nickname to all group memberships when profile updates
   useEffect(() => {
     if (!user?.uid || !profile?.nickname || myGroups.length === 0) return;
     syncMyNicknameToGroupMemberships(profile.nickname).catch(console.error);
   }, [user?.uid, profile?.nickname, myGroups.length, syncMyNicknameToGroupMemberships]);
 
+  // Gate group-dependent reads: wait for membership doc to be visible server-side
+  // This prevents permission-denied errors from hooks that subscribe to group data
+  // before the membership document is fully propagated.
   useEffect(() => {
     let cancelled = false;
 
@@ -308,6 +335,8 @@ export default function App() {
         return;
       }
 
+      // Optimization: avoid unnecessary reset if we're already checking this group
+      // (reduces downstream hook churn when switching between valid groups)
       setGroupAccessReady(false);
 
       try {
@@ -724,29 +753,13 @@ export default function App() {
     const groupIds = myGroups.map((g) => g.id);
     if (groupIds.length === 0) return;
 
-    const batch = writeBatch(db);
+    // Use safe guarded operations to prevent double-counting
+    // (matches setMyGameSharedInGroup pattern)
+    const promises = groupIds.map((groupId) =>
+      safeAddGameToGroup(groupId, gameId)
+    );
 
-    for (const groupId of groupIds) {
-      const gameRef = doc(db, "groups", groupId, "games", gameId);
-      const ownerRef = doc(
-        db,
-        "groups",
-        groupId,
-        "games",
-        gameId,
-        "owners",
-        user.uid
-      );
-
-      batch.set(ownerRef, { addedAt: Date.now() });
-      batch.set(
-        gameRef,
-        { ownersCount: increment(1), updatedAt: Date.now() },
-        { merge: true }
-      );
-    }
-
-    await batch.commit();
+    await Promise.all(promises);
   }
 
   async function removeGameFromAllMyGroups(gameId) {
@@ -755,29 +768,13 @@ export default function App() {
     const groupIds = myGroups.map((g) => g.id);
     if (groupIds.length === 0) return;
 
-    const batch = writeBatch(db);
+    // Use safe guarded operations to prevent negative counts
+    // (matches setMyGameSharedInGroup pattern)
+    const promises = groupIds.map((groupId) =>
+      safeRemoveGameFromGroup(groupId, gameId)
+    );
 
-    for (const groupId of groupIds) {
-      const gameRef = doc(db, "groups", groupId, "games", gameId);
-      const ownerRef = doc(
-        db,
-        "groups",
-        groupId,
-        "games",
-        gameId,
-        "owners",
-        user.uid
-      );
-
-      batch.delete(ownerRef);
-      batch.set(
-        gameRef,
-        { ownersCount: increment(-1), updatedAt: Date.now() },
-        { merge: true }
-      );
-    }
-
-    await batch.commit();
+    await Promise.all(promises);
   }
 
   async function addToCollection(gameId) {
@@ -797,6 +794,48 @@ export default function App() {
     await deleteDoc(doc(db, "users", user.uid, "collection", gameId));
 
     await removeGameFromAllMyGroups(gameId);
+  }
+
+  // Safe guarded add: only increments ownersCount if owner marker doesn't exist
+  // Prevents double-counting from rapid calls, races, or re-syncs
+  async function safeAddGameToGroup(groupId, gameId) {
+    if (!user) return;
+
+    const ownerRef = doc(db, "groups", groupId, "games", gameId, "owners", user.uid);
+    const groupGameRef = doc(db, "groups", groupId, "games", gameId);
+    const now = Date.now();
+
+    await runTransaction(db, async (tx) => {
+      const ownerSnap = await tx.get(ownerRef);
+
+      if (!ownerSnap.exists()) {
+        // New owner - create marker and increment count
+        tx.set(ownerRef, { addedAt: now });
+        tx.set(groupGameRef, { ownersCount: increment(1), updatedAt: now }, { merge: true });
+      }
+      // If owner already exists, no-op (idempotent)
+    });
+  }
+
+  // Safe guarded remove: only decrements ownersCount if owner marker exists
+  // Prevents negative counts from missing markers or double-deletes
+  async function safeRemoveGameFromGroup(groupId, gameId) {
+    if (!user) return;
+
+    const ownerRef = doc(db, "groups", groupId, "games", gameId, "owners", user.uid);
+    const groupGameRef = doc(db, "groups", groupId, "games", gameId);
+    const now = Date.now();
+
+    await runTransaction(db, async (tx) => {
+      const ownerSnap = await tx.get(ownerRef);
+
+      if (ownerSnap.exists()) {
+        // Owner exists - delete marker and decrement count
+        tx.delete(ownerRef);
+        tx.set(groupGameRef, { ownersCount: increment(-1), updatedAt: now }, { merge: true });
+      }
+      // If owner doesn't exist, no-op (idempotent)
+    });
   }
 
   async function rateGame(gameId, value) {
@@ -1213,13 +1252,19 @@ export default function App() {
       const poolMap = new Map(poolDocs.map((p) => [p.id, p]));
 
       // 3) Pick winner (only voted games eligible)
-      const { winnerGameId, scoreBreakdown, weightsUsed } = pickWeightedWinner({
+      const winnerResult = pickWeightedWinner({
         voteCounts,
         poolMap,
         now,
         sessionIndex,
         weights: effectiveWeights,
       });
+
+      if (!winnerResult) {
+        throw new Error("WINNER_SELECTION_FAILED");
+      }
+
+      const { winnerGameId, scoreBreakdown, weightsUsed } = winnerResult;
 
       const normalizeScoreRow = (r) => {
       const votes = Number(r.sessionVotes ?? r.votes ?? r.voteCount ?? 0);
@@ -1427,6 +1472,10 @@ export default function App() {
           throw new Error("ALREADY_IN_POOL");
         }
 
+        const transactionSessionIndex = metaSnap.exists()
+          ? Number(metaSnap.data()?.sessionIndex || 0)
+          : 0;
+
         // Write submission
         tx.set(submissionRef, { gameId: gid, submittedAt: now }, { merge: false });
 
@@ -1439,7 +1488,7 @@ export default function App() {
             isActive: true,
             cycleStartedAt: now,
             cycleVoteCount: 0,
-            cycleStartedSession: sessionIndex,
+            cycleStartedSession: transactionSessionIndex,
             ...(needsAddedAt ? { addedAt: now } : {}),
           },
           { merge: true }
@@ -1486,6 +1535,11 @@ export default function App() {
 
       const submittedIds = subsSnap.docs.map((d) => d.data().gameId).filter(Boolean);
       const candidates = Array.from(new Set([...activePoolGameIds, ...submittedIds]));
+
+      if (candidates.length === 0) {
+        if (!silent) showToast("Cannot start voting: no games in pool or submitted.", "error");
+        return;
+      }
 
       await updateDoc(doc(db, "groups", currentGroupId, "votes", activeVote.id), {
         status: VOTE_STATUS.OPEN,
@@ -1943,7 +1997,7 @@ export default function App() {
                   user={user}
                   myGroups={myGroups}
                   currentGroupId={currentGroupId}
-                  setCurrentGroupId={setCurrentGroupId}
+                  setCurrentGroupId={selectGroup}
                   onCreateGroup={createGroup}
                   onJoinGroup={joinGroup}
                   onOpenGroup={() => {

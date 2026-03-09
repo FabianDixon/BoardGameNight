@@ -19,6 +19,8 @@ export function useVoteBallots(user, currentGroupId, activeVoteId, groupAccessRe
 
   useEffect(() => {
     if (!user || !currentGroupId || !activeVoteId || !groupAccessReady) {
+      setMyBallot(null);
+      setVoteBallots([]);
       return;
     }
 

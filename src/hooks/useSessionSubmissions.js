@@ -18,6 +18,7 @@ export function useSessionSubmissions(currentGroupId, activeVoteId, activeVoteSt
 
   useEffect(() => {
     if (!currentGroupId || !activeVoteId || activeVoteStatus !== VOTE_STATUS.COLLECTING || !groupAccessReady) {
+      setSessionSubmissions([]);
       return;
     }
 

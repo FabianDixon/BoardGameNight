@@ -15,6 +15,7 @@ export function useSessionMeta(currentGroupId, groupAccessReady) {
 
   useEffect(() => {
     if (!currentGroupId || !groupAccessReady) {
+      setSessionMeta(null);
       return;
     }
 

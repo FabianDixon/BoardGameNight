@@ -15,6 +15,7 @@ export function useGroupPool(currentGroupId, groupAccessReady) {
 
   useEffect(() => {
     if (!currentGroupId || !groupAccessReady) {
+      setPoolDocs([]);
       return;
     }
   

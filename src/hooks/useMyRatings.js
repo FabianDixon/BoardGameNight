@@ -13,7 +13,10 @@ export function useMyRatings(user) {
   const [myRatings, setMyRatings] = useState(new Map());
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setMyRatings(new Map());
+      return;
+    }
 
     const q = query(
       collection(db, "ratings"),

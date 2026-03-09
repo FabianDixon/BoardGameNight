@@ -13,7 +13,10 @@ export function useMyCollection(user) {
   const [myCollection, setMyCollection] = useState(new Set());
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setMyCollection(new Set());
+      return;
+    }
 
     const colRef = collection(db, "users", user.uid, "collection");
     const unsub = onSnapshot(colRef, (snap) => {

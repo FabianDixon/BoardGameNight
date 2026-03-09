@@ -17,6 +17,7 @@ export function useMySubmission(userId, currentGroupId, activeVoteId, groupAcces
 
   useEffect(() => {
     if (!userId || !currentGroupId || !activeVoteId || !groupAccessReady) {
+      setMySubmissionGameId(null);
       return;
     }
 
