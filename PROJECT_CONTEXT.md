@@ -88,7 +88,6 @@ Key known files/components in the current project include:
 	•	App.jsx
 	•	main.jsx
 	•	firebase.jsx
-	•	SearchInput.jsx
 	•	GameCard.jsx
 	•	VotingPanel.jsx
 	•	GroupsPanel.jsx
@@ -99,9 +98,7 @@ Key known files/components in the current project include:
 	•	GroupDetail.jsx
 	•	GroupSettingsPanel.jsx
 	•	AddGameForm.jsx
-	•	TopTabs.jsx
 	•	ProfileCard.jsx
-	•	ProfileTab.jsx
 	•	GameImage.jsx
 	•	shared UI helpers such as Card.jsx, Fab.jsx, Toast.jsx
 	•	emailExport.js
@@ -132,207 +129,12 @@ A recurring theme is that the app functionally works, but parts of the code have
 Current Product Priorities
 
 The roadmap priority order is:
-	1.	Code audit / technical cleanup planning
-	2.	Bug fixes
-	3.	New features already identified by product/design discussions
-	4.	Major UI refresh / polish pass
+1. Focused feature and bug tickets on top of the stabilized codebase
+2. Targeted product improvements identified by product/design discussions
+3. Major UI refresh / polish pass
+4. Future scaling and monetization-oriented improvements
 
-Important: current priority is not feature brainstorming from scratch. It is improving the foundation so future work is easier, safer, and faster.
-
-⸻
-
-Immediate AI-Assisted Workflow Goal
-
-The user wants to begin using GitHub Copilot / Codex as implementation assistants for this project.
-
-This means tasks should be prepared in a way that works well for AI coding agents:
-	•	clear scope
-	•	explicit constraints
-	•	known files to inspect
-	•	acceptance criteria
-	•	preference for minimal, focused patches
-	•	avoid unnecessary rewrites unless justified
-
-Copilot/Codex should be used for:
-	•	code audits
-	•	targeted refactors
-	•	feature patches
-	•	bug-fix implementation
-	•	structured suggestions tied to actual files
-
-⸻
-
-Working Style Preferences
-
-When proposing changes, follow these principles:
-
-1. Prefer focused patches over broad rewrites
-
-Do not rewrite large parts of the codebase unless there is a strong architectural reason.
-
-2. Preserve working behavior
-
-The app is already mostly functional. Avoid risky refactors that could break existing behavior unless the task explicitly allows it.
-
-3. Be explicit about tradeoffs
-
-When suggesting refactors, explain:
-	•	why the current pattern is risky or costly
-	•	what the proposed structure improves
-	•	what migration risk exists
-
-4. Optimize for future maintainability
-
-Good solutions should make future features easier to add and reduce coupling.
-
-5. Keep React patterns sound
-
-Pay attention to:
-	•	hook usage order
-	•	dependency arrays
-	•	derived state vs stored state
-	•	listener cleanup
-	•	memoization only where useful
-	•	preventing unnecessary re-renders
-
-6. Respect Firebase realities
-
-Any proposal touching Firestore must consider:
-	•	permission rules
-	•	async consistency
-	•	listener timing
-	•	optimistic vs server-confirmed state
-	•	failure modes during joins/sync operations
-
-⸻
-
-Suspected Technical Debt Areas
-
-These are working assumptions and should be validated during audit:
-
-1. App.jsx may be overloaded
-
-There is a high likelihood that App.jsx currently owns too much orchestration logic, state wiring, and cross-feature coordination.
-
-The current architectural reality is that some flows are still coordinated from the top-level app shell rather than through clearly separated feature modules or custom hooks. Contributors should assume that top-level orchestration is part of the current design and should improve it incrementally rather than replacing it wholesale.
-
-Potential symptoms:
-	•	too many responsibilities in one file
-	•	difficult-to-track state flow
-	•	high regression risk from small changes
-	•	repeated logic for data transformations or access checks
-
-2. Mixed domain responsibilities
-
-Game collection logic, group membership logic, voting logic, UI routing/tab logic, and sync logic may be too interwoven.
-
-3. Firestore listeners and async sequencing
-
-Some bugs suggest issues related to:
-	•	listeners starting before data is ready
-	•	joining groups before membership docs are fully available server-side
-	•	collection/group sync operations racing each other
-	•	permission-denied errors caused by timing rather than pure rule failure
-
-4. UI discoverability / view structure
-
-At least one UX issue already identified: the Manage My Games area was hard to find because it rendered too far down in an existing view instead of behaving like a clearer primary screen/panel.
-
-5. Reusability / consistency gaps
-
-There may be opportunities to consolidate repeated patterns across:
-	•	cards/tiles
-	•	detail panels
-	•	group/game display logic
-	•	toasts / empty states / loading states
-
-6. Future scalability concerns
-
-Before broader usage, the app likely needs review for:
-	•	query efficiency
-	•	render efficiency
-	•	state ownership clarity
-	•	component boundaries
-	•	easier testability
-
-⸻
-
-What a Good Audit Should Cover
-
-The first requested AI task should perform a code audit focused on maintainability, structure, and optimization, not on adding new features.
-
-The audit should inspect the current codebase and produce findings in categories like:
-
-A. Architecture / File Responsibilities
-	•	which files are overloaded
-	•	whether responsibilities are well separated
-	•	candidates for extracting hooks, utilities, or feature modules
-
-B. React State Management
-	•	duplicated state
-	•	derived state that should not be stored
-	•	prop drilling issues
-	•	stale closures / hook dependency issues
-	•	unnecessary memoization or missing memoization where it matters
-
-C. Firebase / Firestore Integration
-	•	duplicated query/listener logic
-	•	unsafe async flows
-	•	missing cleanup
-	•	race conditions
-	•	permission-related fragility caused by timing/order of operations
-
-D. Component Design
-	•	oversized components
-	•	poor reusability
-	•	presentation vs logic separation
-	•	opportunities for shared UI primitives
-
-E. Performance
-	•	expensive renders
-	•	repeated mapping/filtering in render
-	•	missing memoization for expensive derived lists
-	•	excessive listeners or unnecessary data fetches
-
-F. Maintainability / DX
-	•	naming consistency
-	•	dead code
-	•	hard-coded strings
-	•	magic constants
-	•	areas where comments or helper abstractions would help
-
-G. Safe Refactor Suggestions
-
-Recommendations should be prioritized as:
-	•	High impact / low risk
-	•	High impact / medium risk
-	•	Later / optional
-
-The audit should not immediately rewrite code. It should first identify issues and suggest a staged cleanup plan.
-
-⸻
-
-Desired Format for Copilot/Codex Tasks
-
-When generating implementation prompts for coding agents, use this template style:
-
-Task Structure
-	1.	Goal — what to improve or fix
-	2.	Context — why the change matters
-	3.	Files to inspect first
-	4.	Constraints — what must not be broken
-	5.	Implementation guidance — preferred approach
-	6.	Deliverable — audit, patch, refactor, etc.
-	7.	Acceptance criteria
-
-Prompt Tone
-
-Use prompts that encourage:
-	•	minimal safe diffs
-	•	evidence-based analysis after reading files
-	•	no speculative rewrites
-	•	preserving current behavior
-	•	explaining rationale before patching
+Important: the project is no longer primarily in a cleanup-first phase. The current priority is to build on the now-stabilized foundation with focused feature work and bug fixes before the major UI overhaul.
 
 ⸻
 
@@ -344,6 +146,72 @@ After the audit, the plan is to continue with:
 	•	a major UI update / polish pass
 
 This means technical changes now should support future UI work rather than make it harder.
+
+⸻
+
+Post-Stabilization Status
+
+The project has completed an initial stabilization and maintainability pass focused on reducing risk before new product work and UI overhaul planning.
+
+Completed work includes:
+	•	creation and refinement of this project context file
+	•	an initial architecture / maintainability audit
+	•	extraction of multiple read-only Firestore subscription flows from `App.jsx` into focused hooks
+	•	centralization of workflow/status/tab constants
+	•	cleanup of remaining hook dependency suppressions
+	•	removal of clearly unused components/imports
+	•	group access / group selection hardening
+	•	collection-to-group sync hardening, especially around owner count invariants
+	•	voting/session lifecycle hardening
+	•	hook reset-on-gate-off fixes to prevent stale state bleeding across group/session/user changes
+	•	a second follow-up audit after the stabilization work
+
+The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
+
+⸻
+
+Current Product Roadmap Before UI/UX Overhaul
+
+Before starting a major UI/UX redesign, the next planned work is:
+
+1. Submission Phase Improvement
+	•	Allow a user to explicitly choose “No Submission” during the collecting phase.
+	•	This should count as a completed submission-state for auto-advance purposes.
+	•	Users should still be able to change from “No Submission” to a real game submission until voting opens.
+	•	The UX should make it clear that “No Submission” is an intentional state change, not a failed action.
+
+2. Landing Page Sign-In Bug Fix
+	•	The sign-in path from the landing page currently does not work correctly.
+	•	A workaround exists through guest mode → profile → sign in, but the main entry path should be fixed before shipping.
+
+3. Session History / Played Session Tracking
+	•	Add a data model and UI flow to record session history after a vote/session completes.
+	•	Initial goals include:
+		•	automatically logging the selected winner game
+		•	allowing additional played games to be recorded
+		•	allowing the played date to be recorded
+		•	recording player placements / medals with support for ties, cooperative outcomes, or no winner
+	•	This feature is intended to become the foundation for future history views, scoreboards, and play statistics.
+
+4. Game Labels / Tags
+	•	Add labels/tags to games so they can be filtered across the app.
+	•	This should later support:
+		•	filtering in multiple screens
+		•	group-specific hiding or preference rules
+		•	future statistics by tag/category
+
+These items should generally be approached before the UI overhaul so that the redesign can account for the real product shape rather than forcing these features in later.
+
+⸻
+
+Current Development Strategy
+
+The preferred sequence is now:
+	1.	focused feature/bug tickets for the items above
+	2.	confirm stability with light regression testing
+	3.	plan the UI/UX overhaul using the updated feature set and data model
+
+The project is no longer primarily in a “cleanup first” phase. Remaining technical cleanup should be driven by concrete upcoming work rather than general architectural ambition.
 
 ⸻
 
@@ -382,16 +250,7 @@ Expected output:
 	•	a clear do now / later / avoid for now breakdown
 	•	no major code changes unless explicitly requested
 
+Note:
+	•	This task has already been completed during the initial stabilization phase and is preserved here as historical context for future contributors.
+
 ⸻
-
-Notes for Future Updates to This Document
-
-This file should be updated when:
-	•	major architecture changes are made
-	•	state management approach changes
-	•	Firestore schema/rules assumptions change
-	•	new core modules are introduced
-	•	the UI overhaul begins
-	•	monetization-related constraints appear
-
-It should remain a practical onboarding/context file, not a long historical diary.
