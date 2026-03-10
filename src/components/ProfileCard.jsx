@@ -17,7 +17,9 @@ export default function ProfileCard({
 }) {
   const auth = useMemo(() => getAuth(), []);
 
-  const [mode, setMode] = useState("link"); // "link" | "signin"
+  // Start in signin mode if localStorage indicates the user came from landing page signin button
+  const defaultMode = typeof window !== 'undefined' && localStorage.getItem("bgng_auth_choice") === "signin" ? "signin" : "link";
+  const [mode, setMode] = useState(defaultMode); // "link" | "signin"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 

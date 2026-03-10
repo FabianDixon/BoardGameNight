@@ -2008,7 +2008,8 @@ export default function App() {
               localStorage.setItem("bgng_auth_choice", "signin");
               setShowAuthPrompt(false);
               setActiveTab(APP_TAB.PROFILE);
-              // ProfileCard will show Sign in UI
+              // Sign in as guest so ProfileCard can appear
+              signInAnonymously(auth);
             }}
           >
             Sign in
