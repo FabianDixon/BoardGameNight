@@ -31,6 +31,7 @@ import { useVoteBallots } from "./hooks/useVoteBallots";
 import { useSessionSubmissions } from "./hooks/useSessionSubmissions";
 import { useMySubmission } from "./hooks/useMySubmission";
 import { useSessionMeta } from "./hooks/useSessionMeta";
+import { useGroupSessionHistory } from "./hooks/useGroupSessionHistory";
 
 import ProfileCard from "./components/ProfileCard";
 import AddGameForm from "./components/AddGameForm";
@@ -66,13 +67,13 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
         }}
       />
 
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-xl border border-gray-200">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="relative w-full max-w-xl bg-neutral-800 rounded-2xl shadow-xl border border-neutral-700">
+        <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+          <h2 className="text-lg font-semibold text-white">{title}</h2>
 
           {dismissible && (
             <button
-              className="px-3 py-1 rounded border bg-white"
+              className="px-3 py-1 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
               onClick={onClose}
             >
               Close
@@ -156,6 +157,7 @@ export default function App() {
   const [mySharedGameIdsInCurrentGroup, setMySharedGameIdsInCurrentGroup] = useState(new Set());
 
   const sessionMeta = useSessionMeta(currentGroupId, groupAccessReady);
+  const sessionHistory = useGroupSessionHistory(currentGroupId, groupAccessReady);
 
   const [isAddGameOpen, setIsAddGameOpen] = useState(false);
   const [addGameForm, setAddGameForm] = useState({
@@ -2104,7 +2106,7 @@ export default function App() {
         onClose={() => { }}
         dismissible={false}
       >
-        <p className="text-sm text-gray-700 mb-4">
+        <p className="text-sm text-gray-300 mb-4">
           Sign in to keep your data across devices, or continue as a guest.
         </p>
 
@@ -2121,7 +2123,7 @@ export default function App() {
           </button>
 
           <button
-            className="border px-4 py-2 rounded bg-white hover:bg-gray-50"
+            className="border border-neutral-700 px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-white"
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "signin");
               setShowAuthPrompt(false);
@@ -2303,6 +2305,7 @@ export default function App() {
                         sessionPlayRecord={sessionPlayRecord}
                         onSaveSessionPlay={saveSessionPlay}
                         isSavingSessionPlay={isSavingSessionPlay}
+                        sessionHistory={sessionHistory}
                       />
                     }
                     canEditNewness={user?.uid === currentGroup?.ownerId}
@@ -2333,12 +2336,12 @@ export default function App() {
                     onSetMyGameSharedInGroup={setMyGameSharedInGroup}
                   />
                 ) : (
-                  <div className="bg-white p-4 rounded-2xl shadow">
-                    <p className="text-sm text-gray-700 mb-3">
+                  <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+                    <p className="text-sm text-gray-300 mb-3">
                       No group selected. Please pick a group to continue.
                     </p>
                     <button
-                      className="text-sm text-blue-700 hover:underline"
+                      className="text-sm text-blue-400 hover:underline"
                       onClick={() => setGroupView(GROUP_VIEW.PICKER)}
                     >
                       ← Back to groups
@@ -2443,7 +2446,7 @@ export default function App() {
 
           if (!winnerModal.winnerGameId) {
             return (
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-gray-300">
                 No votes were cast, so there is no winner.
               </p>
             );
@@ -2453,31 +2456,31 @@ export default function App() {
 
           return (
             <div className="space-y-3">
-              <div className="p-3 rounded-xl border bg-gray-50">
-                <div className="text-sm text-gray-600">Winner</div>
-                <div className="text-lg font-semibold">{winnerTitle}</div>
+              <div className="p-3 rounded-xl border border-neutral-700 bg-neutral-900">
+                <div className="text-sm text-gray-400">Winner</div>
+                <div className="text-lg font-semibold text-white">{winnerTitle}</div>
                 {winnerRow && (
-                  <div className="text-sm text-gray-700 mt-1">
+                  <div className="text-sm text-gray-300 mt-1">
                     Score:  <span className="font-semibold">{winnerRow.score.toFixed(2)}</span>
                     {winnerRow.votes ? (
-                      <span className="text-gray-500"> · Votes: {winnerRow.votes}</span>
+                      <span className="text-gray-400"> · Votes: {winnerRow.votes}</span>
                     ) : null}
                   </div>
                 )}
               </div>
 
               <div>
-                <div className="text-sm font-semibold mb-2">Scores</div>
+                <div className="text-sm font-semibold mb-2 text-white">Scores</div>
                 {scored.length === 0 ? (
-                  <p className="text-sm text-gray-600">No scored candidates.</p>
+                  <p className="text-sm text-gray-300">No scored candidates.</p>
                 ) : (
                   <ul className="text-sm space-y-1">
                     {scored.map((r) => (
                       <li key={r.gameId} className="flex justify-between gap-3">
-                        <span className={r.gameId === winnerModal.winnerGameId ? "font-semibold" : ""}>
+                        <span className={r.gameId === winnerModal.winnerGameId ? "font-semibold text-white" : "text-gray-300"}>
                           {r.title}
                         </span>
-                        <span className="text-gray-700 tabular-nums">
+                        <span className="text-gray-300 tabular-nums">
                           {r.score.toFixed(2)}
                         </span>
                       </li>

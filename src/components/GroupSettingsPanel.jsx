@@ -115,7 +115,7 @@ export default function GroupSettingsPanel({
         onResetWeights={onResetWeights}
       />
 
-      <div className="text-xs text-gray-500">
+      <div className="text-xs text-gray-400">
         Your role:{" "}
         <span className="font-mono">{safeRoleLabel(myRole || "member")}</span>
       </div>
@@ -140,15 +140,15 @@ function MetaSettingsSection({
   }
 
   return (
-    <div className="bg-white p-4 rounded-2xl shadow border space-y-3">
+    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700 space-y-3">
       <div>
-        <h3 className="text-xl font-semibold">Group rules</h3>
-        <p className="text-sm text-gray-600 mt-1">
+        <h3 className="text-xl font-semibold text-white">Group rules</h3>
+        <p className="text-sm text-gray-300 mt-1">
           Owner-controlled rules that affect session behavior.
         </p>
       </div>
 
-      {!canEditMeta && <div className="text-sm text-gray-600">{ownerOnlyMsg}</div>}
+      {!canEditMeta && <div className="text-sm text-gray-300">{ownerOnlyMsg}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <SettingToggle
@@ -214,7 +214,7 @@ function MetaSettingsSection({
         {!metaExists && canEditMeta && typeof onInitMeta === "function" && (
           <button
             type="button"
-            className="px-4 py-2 rounded border bg-yellow-50 hover:bg-yellow-100 text-sm"
+            className="px-4 py-2 rounded border border-yellow-500 bg-yellow-900 hover:bg-yellow-800 text-yellow-200 text-sm"
             onClick={onInitMeta}
           >
             Initialize group rules (create defaults)
@@ -223,7 +223,7 @@ function MetaSettingsSection({
 
         <button
           type="button"
-          className="px-4 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
+          className="px-4 py-2 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white disabled:opacity-50"
           disabled={!canEditMeta || !metaDirty || typeof onSaveMeta !== "function"}
           onClick={() => {
             onSaveMeta?.({
@@ -260,17 +260,17 @@ function MembersSection({
   onTransferOwnership,
 }) {
   return (
-    <div className="bg-white p-4 rounded-2xl shadow border space-y-3">
+    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700 space-y-3">
       <div>
-        <h3 className="text-xl font-semibold">Members</h3>
-        <p className="text-sm text-gray-600 mt-1">
+        <h3 className="text-xl font-semibold text-white">Members</h3>
+        <p className="text-sm text-gray-300 mt-1">
           Roles: <span className="font-medium">Owner</span>,{" "}
           <span className="font-medium">Member</span>,{" "}
           <span className="font-medium">Moderator</span> (weights only).
         </p>
       </div>
 
-      {!isOwner && <div className="text-sm text-gray-600">{ownerOnlyMsg}</div>}
+      {!isOwner && <div className="text-sm text-gray-300">{ownerOnlyMsg}</div>}
 
       <div className="space-y-2">
         {members?.length ? (
@@ -282,18 +282,18 @@ function MembersSection({
             return (
               <div
                 key={m.userId}
-                className="flex flex-wrap items-center justify-between gap-2 border rounded-xl p-3 bg-gray-50"
+                className="flex flex-wrap items-center justify-between gap-2 border border-neutral-700 rounded-xl p-3 bg-neutral-900"
               >
                 <div className="min-w-0">
-                  <div className="font-semibold text-sm truncate">{display}</div>
-                  <div className="text-xs text-gray-600">
+                  <div className="font-semibold text-sm truncate text-white">{display}</div>
+                  <div className="text-xs text-gray-400">
                     {safeRoleLabel(role)} {isMe ? "• (you)" : ""}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <select
-                    className="border rounded px-2 py-1 text-sm bg-white disabled:bg-gray-100"
+                    className="border border-neutral-700 rounded px-2 py-1 text-sm bg-neutral-900 text-white disabled:bg-neutral-800"
                     disabled={!isOwner || role === "owner"}
                     value={role === "owner" ? "owner" : role}
                     onChange={(e) => {
@@ -310,7 +310,7 @@ function MembersSection({
 
                   <button
                     type="button"
-                    className="px-3 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50 text-sm"
+                    className="px-3 py-2 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white disabled:opacity-50 text-sm"
                     disabled={!isOwner || m.userId === group?.ownerId}
                     onClick={() => onTransferOwnership?.(group.id, m.userId)}
                     title={!isOwner ? "Only owner can transfer ownership" : ""}
@@ -322,7 +322,7 @@ function MembersSection({
             );
           })
         ) : (
-          <div className="text-sm text-gray-600">Loading members…</div>
+          <div className="text-sm text-gray-300">Loading members…</div>
         )}
       </div>
     </div>
@@ -356,16 +356,16 @@ function WeightsSection({
   }
 
   return (
-    <div className="bg-white p-4 rounded-2xl shadow border space-y-4">
+    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700 space-y-4">
       <div>
-        <h3 className="text-xl font-semibold">Weight settings</h3>
-        <p className="text-sm text-gray-600 mt-1">
+        <h3 className="text-xl font-semibold text-white">Weight settings</h3>
+        <p className="text-sm text-gray-300 mt-1">
           These weights affect the winner score as{" "}
           <span className="font-mono">effectiveScore = sessionVotes × multiplier</span>. Only games with votes can win.
         </p>
       </div>
 
-      {!canEditWeights && <div className="text-sm text-gray-600">{weightsEditMsg}</div>}
+      {!canEditWeights && <div className="text-sm text-gray-300">{weightsEditMsg}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <SettingNumber
@@ -443,7 +443,7 @@ function WeightsSection({
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          className="px-4 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
+          className="px-4 py-2 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white disabled:opacity-50"
           disabled={!canEditWeights}
           onClick={() => {
             setForm({ ...DEFAULT_WEIGHTS });
@@ -455,7 +455,7 @@ function WeightsSection({
 
         <button
           type="button"
-          className="px-4 py-2 rounded border bg-white hover:bg-gray-50 disabled:opacity-50"
+          className="px-4 py-2 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white disabled:opacity-50"
           disabled={!canEditWeights}
           onClick={() => onResetWeights?.()}
           title="Deletes overrides in Firestore"
@@ -478,11 +478,11 @@ function WeightsSection({
 
 function SettingNumber({ label, help, value, onChange, step, min, max, disabled }) {
   return (
-    <div className="border rounded-xl p-3 bg-gray-50">
-      <div className="font-semibold text-sm">{label}</div>
-      <div className="text-xs text-gray-600 mt-1">{help}</div>
+    <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900">
+      <div className="font-semibold text-sm text-white">{label}</div>
+      <div className="text-xs text-gray-400 mt-1">{help}</div>
       <input
-        className="mt-2 w-full border rounded px-3 py-2 bg-white disabled:bg-gray-100"
+        className="mt-2 w-full border border-neutral-700 rounded px-3 py-2 bg-neutral-900 text-white disabled:bg-neutral-800"
         type="number"
         value={toNumberOrEmpty(value)}
         step={step}
@@ -497,16 +497,16 @@ function SettingNumber({ label, help, value, onChange, step, min, max, disabled 
 
 function SettingToggle({ label, help, checked, disabled, onChange }) {
   return (
-    <div className="border rounded-xl p-3 bg-gray-50">
+    <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="font-semibold text-sm">{label}</div>
-          <div className="text-xs text-gray-600 mt-1">{help}</div>
+          <div className="font-semibold text-sm text-white">{label}</div>
+          <div className="text-xs text-gray-400 mt-1">{help}</div>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Optional but very clear: text cue */}
-          <span className="text-xs text-gray-600 w-8 text-right">
+          <span className="text-xs text-gray-400 w-8 text-right">
             {checked ? "On" : "Off"}
           </span>
 

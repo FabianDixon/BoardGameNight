@@ -24,15 +24,15 @@ export default function GameDetail({
   shareBusy,
 }) {
   return (
-    <div className="bg-white rounded-2xl shadow p-6 max-w-xl">
+    <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-6 max-w-xl">
       <div className="flex items-center justify-between mb-4">
-        <button className="text-sm text-blue-700 hover:underline" onClick={onBack}>
+        <button className="text-sm text-blue-400 hover:underline" onClick={onBack}>
           ← Back
         </button>
 
         {canEdit && (
           <button
-            className="text-sm border rounded px-3 py-1 bg-white hover:bg-gray-50"
+            className="text-sm border border-neutral-700 rounded px-3 py-1 bg-neutral-700 hover:bg-neutral-600 text-white"
             onClick={onEdit}
             title="Edit game"
             aria-label="Edit game"
@@ -43,7 +43,7 @@ export default function GameDetail({
       </div>
 
       {game.imageUrl && (
-      <div className="w-full flex justify-center bg-gray-100 rounded-2xl overflow-hidden mb-4">
+      <div className="w-full flex justify-center bg-neutral-900 rounded-2xl overflow-hidden mb-4">
         <img
           src={game.imageUrl}
           alt={game.title}
@@ -63,15 +63,15 @@ export default function GameDetail({
       </div>
     )}
 
-      <h2 className="text-2xl font-bold">{game.title}</h2>
-      <p className="mt-2 text-gray-700">{game.description}</p>
+      <h2 className="text-2xl font-bold text-white">{game.title}</h2>
+      <p className="mt-2 text-gray-300">{game.description}</p>
 
       <div className="mt-4">
-        <p className="text-yellow-700 text-sm mb-1">
+        <p className="text-yellow-400 text-sm mb-1">
           Average rating: {averageRating(game)}
         </p>
 
-        <p className="text-sm text-gray-700 mb-2">
+        <p className="text-sm text-gray-300 mb-2">
           Your rating:{" "}
           <span className="font-semibold">{myRating ?? "—"}</span>
         </p>
@@ -84,23 +84,23 @@ export default function GameDetail({
       </div>
 
       {groupId && (
-        <div className="mt-4 p-3 rounded-xl border bg-gray-50">
-          <div className="text-sm font-semibold mb-2">This group</div>
+        <div className="mt-4 p-3 rounded-xl border border-neutral-700 bg-neutral-900">
+          <div className="text-sm font-semibold mb-2 text-white">This group</div>
 
           {!inCollection ? (
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-gray-300">
               Add this game to your collection to be able to share it with this group.
             </p>
           ) : (
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm text-gray-800">
+                <div className="text-sm text-gray-300">
                   Shared by you:{" "}
                   <span className="font-semibold">
                     {sharedInGroup == null ? "…" : sharedInGroup ? "Yes" : "No"}
                   </span>
                 </div>
-                <div className="text-xs text-gray-600">
+                <div className="text-xs text-gray-400">
                   Controls whether this game appears in the group collection because of you.
                 </div>
               </div>
@@ -108,7 +108,7 @@ export default function GameDetail({
               <button
                 type="button"
                 className={`px-3 py-2 rounded border ${
-                  sharedInGroup ? "bg-white" : "bg-blue-600 text-white border-blue-600"
+                  sharedInGroup ? "bg-neutral-700 border-neutral-700 text-white" : "bg-blue-600 text-white border-blue-600"
                 } disabled:opacity-50`}
                 disabled={!onToggleShareInGroup || !!shareBusy || sharedInGroup == null}
                 onClick={() => onToggleShareInGroup(!(sharedInGroup === true))}

@@ -21,10 +21,10 @@ export default function Toast({ toasts, onClose }) {
       {toasts.map((toast) => {
         const tone =
           toast.type === "success"
-            ? "border-green-200 bg-green-50 text-green-900"
+            ? "border-green-700 bg-green-900 text-green-200"
             : toast.type === "error"
-            ? "border-red-200 bg-red-50 text-red-900"
-            : "border-gray-200 bg-white text-gray-900";
+            ? "border-red-700 bg-red-900 text-red-200"
+            : "border-neutral-700 bg-neutral-800 text-gray-200";
 
         return (
           <div
