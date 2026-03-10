@@ -20,15 +20,15 @@ export default function GroupsPanel({
   }, [myGroups]);
 
   return (
-    <div className="bg-white p-4 rounded-2xl shadow">
-      <h2 className="text-xl font-semibold mb-3">Groups</h2>
+    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+      <h2 className="text-xl font-semibold mb-3 text-white">Groups</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="border rounded-xl p-3">
-          <div className="text-sm font-semibold mb-2">Create group</div>
+        <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900">
+          <div className="text-sm font-semibold mb-2 text-white">Create group</div>
           <div className="flex gap-2">
             <input
-              className="border p-2 rounded w-full"
+              className="border border-neutral-700 p-2 rounded w-full bg-neutral-900 text-white placeholder-gray-400"
               placeholder="Group name"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
@@ -52,11 +52,11 @@ export default function GroupsPanel({
           </div>
         </div>
 
-        <div className="border rounded-xl p-3">
-          <div className="text-sm font-semibold mb-2">Join group</div>
+        <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900">
+          <div className="text-sm font-semibold mb-2 text-white">Join group</div>
           <div className="flex gap-2">
             <input
-              className="border p-2 rounded w-full"
+              className="border border-neutral-700 p-2 rounded w-full bg-neutral-900 text-white placeholder-gray-400"
               placeholder="Paste invite code"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
@@ -83,10 +83,10 @@ export default function GroupsPanel({
       </div>
 
       <div className="mt-4">
-        <div className="text-sm font-semibold mb-2">Your groups</div>
+        <div className="text-sm font-semibold mb-2 text-white">Your groups</div>
 
         {groupsSorted.length === 0 ? (
-          <p className="text-sm text-gray-600">No groups yet.</p>
+          <p className="text-sm text-gray-300">No groups yet.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {groupsSorted.map((g) => {
@@ -94,15 +94,15 @@ export default function GroupsPanel({
               return (
                 <button
                   key={g.id}
-                  className={`text-left border rounded-xl p-3 hover:bg-gray-50 ${
-                    active ? "border-gray-400 bg-gray-50" : "border-gray-200 bg-white"
+                  className={`text-left border rounded-xl p-3 ${
+                    active ? "border-neutral-600 bg-neutral-700 hover:bg-neutral-600" : "border-neutral-700 bg-neutral-800 hover:bg-neutral-700"
                   }`}
                   onClick={() => {
                     setCurrentGroupId(g.id);
                     onOpenGroup?.();
                   }}
                 >
-                  <div className="font-semibold">{g.name || "Untitled group"}</div>
+                  <div className="font-semibold text-white">{g.name || "Untitled group"}</div>
                 </button>
               );
             })}

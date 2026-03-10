@@ -364,8 +364,31 @@ match /groups/{groupId}/pool/{gameId} {
 // -------------------------
 match /groups/{groupId}/plays/{playId} {
   allow read: if isGroupMember(groupId);
-  allow create: if isGroupMember(groupId);
-  allow update, delete: if false;
+
+  function isValidPlayRecordShape() {
+    return request.resource.data.groupId == groupId
+      && request.resource.data.voteId is string
+      && (request.resource.data.sessionIndex == null || request.resource.data.sessionIndex is number)
+      && (request.resource.data.playedAt == null || request.resource.data.playedAt is number)
+      && (request.resource.data.winnerGameId == null || request.resource.data.winnerGameId is string)
+      && request.resource.data.playedGameIds is list
+      && request.resource.data.createdAt is number
+      && request.resource.data.updatedAt is number
+      && request.resource.data.createdBy is string;
+  }
+
+  allow create: if isGroupMember(groupId)
+    && request.auth.uid == request.resource.data.createdBy
+    && isValidPlayRecordShape();
+
+  allow update: if isGroupMember(groupId)
+    && isValidPlayRecordShape()
+    && request.resource.data.groupId == resource.data.groupId
+    && request.resource.data.voteId == resource.data.voteId
+    && request.resource.data.createdBy == resource.data.createdBy
+    && request.resource.data.createdAt == resource.data.createdAt;
+
+  allow delete: if false;
 }
 
 // -------------------------

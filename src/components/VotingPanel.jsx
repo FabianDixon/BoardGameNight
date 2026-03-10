@@ -76,6 +76,39 @@ function titleById(gameMap, id) {
   return gameMap.get(id)?.title || id;
 }
 
+function normalizePlayedGameIds(playedGameIds, winnerGameId) {
+  const winnerId = typeof winnerGameId === "string" && winnerGameId.trim()
+    ? winnerGameId.trim()
+    : null;
+
+  const uniqueIds = [];
+  for (const value of Array.isArray(playedGameIds) ? playedGameIds : []) {
+    const id = String(value || "").trim();
+    if (!id || uniqueIds.includes(id)) continue;
+    uniqueIds.push(id);
+  }
+
+  if (!winnerId) return uniqueIds;
+  return [winnerId, ...uniqueIds.filter((id) => id !== winnerId)];
+}
+
+function toDateInputValue(timestamp) {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return "";
+  const d = new Date(timestamp);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fromDateInputValue(value) {
+  const v = String(value || "").trim();
+  if (!v) return null;
+  const t = new Date(`${v}T12:00:00`).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
 function VotingPanelInner({
   user,
   currentGroupId,
@@ -98,6 +131,9 @@ function VotingPanelInner({
   onCloseVote,
   onExportSession,
   onEmailSession,
+  sessionPlayRecord,
+  onSaveSessionPlay,
+  isSavingSessionPlay,
 
   canEmailSession,
   canManageSession,
@@ -258,6 +294,38 @@ function VotingPanelInner({
     [scoredResults]
   );
 
+  const winnerGameId = useMemo(() => {
+    const x = activeVote?.winnerGameId;
+    if (!x) return null;
+    return String(x).trim() || null;
+  }, [activeVote?.winnerGameId]);
+
+  const historyOptions = useMemo(() => {
+    return [...(groupGames || [])].sort((a, b) =>
+      (a.title || "").localeCompare(b.title || "")
+    );
+  }, [groupGames]);
+
+  const initialHistoryPlayedDate = status === VOTE_STATUS.CLOSED
+    ? toDateInputValue(
+        typeof sessionPlayRecord?.playedAt === "number"
+          ? sessionPlayRecord.playedAt
+          : (typeof activeVote?.closedAt === "number" ? activeVote.closedAt : null)
+      )
+    : "";
+
+  const initialHistoryPlayedGameIds = status === VOTE_STATUS.CLOSED
+    ? normalizePlayedGameIds(
+        sessionPlayRecord?.playedGameIds && sessionPlayRecord.playedGameIds.length
+          ? sessionPlayRecord.playedGameIds
+          : normalizePlayedGameIds([], winnerGameId),
+        winnerGameId
+      )
+    : [];
+
+  const [historyPlayedDate, setHistoryPlayedDate] = useState(initialHistoryPlayedDate);
+  const [historyPlayedGameIds, setHistoryPlayedGameIds] = useState(initialHistoryPlayedGameIds);
+
   async function handleSubmit() {
     if (submitDisabled) return;
     await onSubmitGame(effectiveSelectedSubmissionId);
@@ -269,6 +337,35 @@ function VotingPanelInner({
     if (disallowOwnSubmissionVote && effectiveSelectedVoteId === mySubId) return; // hard block
     await onCastVote(effectiveSelectedVoteId);
     setSelectedVoteId(null);
+  }
+
+  async function handleSaveSessionPlay() {
+    if (!onSaveSessionPlay || status !== VOTE_STATUS.CLOSED) return;
+    if (isSavingSessionPlay) return;
+
+    await onSaveSessionPlay({
+      playedAt: fromDateInputValue(historyPlayedDate),
+      playedGameIds: normalizePlayedGameIds(historyPlayedGameIds, winnerGameId),
+    });
+  }
+
+  function togglePlayedGame(gameId) {
+    const id = String(gameId || "").trim();
+    if (!id) return;
+
+    setHistoryPlayedGameIds((prev) => {
+      const existing = normalizePlayedGameIds(prev, winnerGameId);
+      const has = existing.includes(id);
+
+      if (has) {
+        return normalizePlayedGameIds(
+          existing.filter((x) => x !== id),
+          winnerGameId
+        );
+      }
+
+      return normalizePlayedGameIds([...existing, id], winnerGameId);
+    });
   }
 
   return (
@@ -554,6 +651,83 @@ function VotingPanelInner({
               </ul>
             )}
           </div>
+
+          <div className="pt-2 border-t space-y-3">
+            <div className="text-sm font-semibold">Session history</div>
+
+            <div className="text-xs text-gray-600">
+              Session: <span className="font-mono">{activeVote?.id || "—"}</span>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Played date</label>
+              <input
+                type="date"
+                value={historyPlayedDate}
+                onChange={(e) => setHistoryPlayedDate(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="text-sm font-medium mb-1">Primary played game</div>
+                {winnerGameId ? (
+                  <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm flex items-center justify-between gap-3">
+                    <span className="font-medium">{titleById(gameMap, winnerGameId)}</span>
+                    <span className="text-xs text-gray-600">Winner (prefilled)</span>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                    No winner was recorded for this session.
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="text-sm font-medium mb-1">Additional played games</div>
+                <div className="text-xs text-gray-600 mb-2">
+                  Select any other games the group also played.
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-white">
+                  <div className="max-h-60 overflow-y-auto">
+                    {historyOptions
+                      .filter((g) => g.id !== winnerGameId)
+                      .map((g) => {
+                        const checked = historyPlayedGameIds.includes(g.id);
+                        return (
+                          <label
+                            key={g.id}
+                            className="flex w-full items-start gap-3 px-3 py-3 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 shrink-0"
+                              checked={checked}
+                              onChange={() => togglePlayedGame(g.id)}
+                            />
+                            <span className="block flex-1 min-w-0 break-words text-sm leading-5">
+                              {g.title}
+                            </span>
+                          </label>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="px-4 py-2 rounded-xl border bg-white disabled:opacity-50"
+              onClick={handleSaveSessionPlay}
+              disabled={!canManageSession || isSavingSessionPlay}
+              title={!canManageSession ? "Only session/group owner can save" : ""}
+            >
+              {isSavingSessionPlay ? "Saving…" : "Save session history"}
+            </button>
+          </div>
         </div>
       )}
       <Fab
@@ -580,6 +754,11 @@ function VotingPanelInner({
 }
 
 export default function VotingPanel(props) {
-  const phaseKey = `${props.activeVote?.id || "no-vote"}:${props.activeVote?.status || "none"}`;
+  const phaseKey = [
+    props.activeVote?.id || "no-vote",
+    props.activeVote?.status || "none",
+    props.sessionPlayRecord?.updatedAt || "no-play-update",
+    props.sessionPlayRecord?.playedAt || "no-played-at",
+  ].join(":");
   return <VotingPanelInner key={phaseKey} {...props} />;
 }

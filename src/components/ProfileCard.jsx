@@ -121,17 +121,17 @@ export default function ProfileCard({
   }
 
   return (
-    <div className="bg-white p-4 rounded-2xl shadow">
-      <h2 className="text-xl font-semibold mb-3">Profile</h2>
+    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+      <h2 className="text-xl font-semibold mb-3 text-white">Profile</h2>
 
       {!user ? (
-        <p className="text-sm text-gray-600">Signing in…</p>
+        <p className="text-sm text-gray-300">Signing in…</p>
       ) : !profile ? (
-        <p className="text-sm text-gray-600">Loading profile…</p>
+        <p className="text-sm text-gray-300">Loading profile…</p>
       ) : (
         <>
           {/* Nickname */}
-          <p className="text-sm text-gray-700 mb-2">
+          <p className="text-sm text-gray-300 mb-2">
             Current nickname:{" "}
             <span className="font-semibold">
               {profile.nickname || "(no nickname yet)"}
@@ -140,7 +140,7 @@ export default function ProfileCard({
 
           <div className="mb-4">
             <input
-              className="border p-2 rounded w-full mb-2"
+              className="border border-neutral-700 p-2 rounded w-full mb-2 bg-neutral-900 text-white placeholder-gray-400"
               placeholder="Enter nickname"
               value={nickname}
               onChange={(e) => setNickname(e.target.value)}
@@ -155,15 +155,15 @@ export default function ProfileCard({
             </button>
           </div>
 
-          <hr className="my-4" />
+          <hr className="my-4 border-neutral-700" />
 
           {/* Account section */}
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold">Account</h3>
+            <h3 className="text-lg font-semibold text-white">Account</h3>
 
             {!isAnonymous && (
               <button
-                className="text-sm text-red-700 hover:underline"
+                className="text-sm text-red-400 hover:underline"
                 onClick={handleSignOut}
                 disabled={busy}
               >
@@ -173,7 +173,7 @@ export default function ProfileCard({
           </div>
 
           {!isAnonymous ? (
-            <p className="text-sm text-gray-700">
+            <p className="text-sm text-gray-300">
               Your account is secured.
               {user.email ? (
                 <>
@@ -184,15 +184,15 @@ export default function ProfileCard({
             </p>
           ) : (
             <>
-              <p className="text-sm text-gray-600 mb-3">
+              <p className="text-sm text-gray-300 mb-3">
                 You’re using a temporary account. Save it so you can sign in again on other devices.
               </p>
 
               {/* Mode toggle */}
               <div className="flex gap-2 mb-3">
                 <button
-                  className={`px-3 py-2 rounded border ${
-                    mode === "link" ? "bg-gray-100" : "bg-white"
+                  className={`px-3 py-2 rounded border border-neutral-700 text-white ${
+                    mode === "link" ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
                   }`}
                   onClick={() => {
                     clearMsg();
@@ -204,8 +204,8 @@ export default function ProfileCard({
                 </button>
 
                 <button
-                  className={`px-3 py-2 rounded border ${
-                    mode === "signin" ? "bg-gray-100" : "bg-white"
+                  className={`px-3 py-2 rounded border border-neutral-700 text-white ${
+                    mode === "signin" ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
                   }`}
                   onClick={() => {
                     clearMsg();
@@ -219,7 +219,7 @@ export default function ProfileCard({
 
               {/* Inputs */}
               <input
-                className="border p-2 rounded w-full mb-2"
+                className="border border-neutral-700 p-2 rounded w-full mb-2 bg-neutral-900 text-white placeholder-gray-400"
                 placeholder="Email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -228,7 +228,7 @@ export default function ProfileCard({
               />
 
               <input
-                className="border p-2 rounded w-full mb-2"
+                className="border border-neutral-700 p-2 rounded w-full mb-2 bg-neutral-900 text-white placeholder-gray-400"
                 placeholder={mode === "signin" ? "Password" : "Password (min 6 chars)"}
                 type="password"
                 value={password}
@@ -241,10 +241,10 @@ export default function ProfileCard({
                 <p
                   className={`text-sm mb-2 ${
                     msg.type === "error"
-                      ? "text-red-600"
+                      ? "text-red-400"
                       : msg.type === "success"
-                      ? "text-green-700"
-                      : "text-gray-700"
+                      ? "text-green-400"
+                      : "text-gray-300"
                   }`}
                 >
                   {msg.text}

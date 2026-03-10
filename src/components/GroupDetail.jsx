@@ -43,29 +43,29 @@ export default function GroupDetail({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white p-4 rounded-2xl shadow border">
+      <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <button
-              className="text-sm text-blue-700 hover:underline"
+              className="text-sm text-blue-400 hover:underline"
               onClick={onBack}
               type="button"
             >
               ← Back to groups
             </button>
 
-            <h2 className="text-2xl font-bold mt-2 truncate">
+            <h2 className="text-2xl font-bold mt-2 truncate text-white">
               {group?.name || "Group"}
             </h2>
 
             {groupId && (
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-gray-500">Invite code:</span>
-                <code className="px-2 py-1 text-xs bg-gray-100 border rounded font-mono">
+                <span className="text-xs text-gray-400">Invite code:</span>
+                <code className="px-2 py-1 text-xs bg-neutral-900 border border-neutral-700 rounded font-mono text-gray-300">
                   {groupId}
                 </code>
                 <button
-                  className="text-sm text-blue-700 hover:underline"
+                  className="text-sm text-blue-400 hover:underline"
                   type="button"
                   onClick={async () => {
                     await navigator.clipboard.writeText(groupId);
@@ -80,7 +80,7 @@ export default function GroupDetail({
 
           {groupId && onLeaveGroup && (
             <button
-              className="text-sm text-red-700 hover:underline shrink-0"
+              className="text-sm text-red-400 hover:underline shrink-0"
               type="button"
               onClick={() => onLeaveGroup(groupId)}
             >
@@ -91,8 +91,8 @@ export default function GroupDetail({
 
         <div className="mt-4 flex gap-2 flex-wrap">
           <button
-            className={`px-3 py-2 rounded-full border ${
-              groupTab === GROUP_TAB.COLLECTION ? "bg-gray-100" : "bg-white"
+            className={`px-3 py-2 rounded-full border border-neutral-700 text-white ${
+              groupTab === GROUP_TAB.COLLECTION ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
             }`}
             onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
             type="button"
@@ -100,8 +100,8 @@ export default function GroupDetail({
             Collection
           </button>
           <button
-            className={`px-3 py-2 rounded-full border ${
-              groupTab === GROUP_TAB.VOTING ? "bg-gray-100" : "bg-white"
+            className={`px-3 py-2 rounded-full border border-neutral-700 text-white ${
+              groupTab === GROUP_TAB.VOTING ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
             }`}
             onClick={() => setGroupTab(GROUP_TAB.VOTING)}
             type="button"
@@ -110,8 +110,8 @@ export default function GroupDetail({
           </button>
           {settingsNode && (
             <button
-              className={`px-3 py-2 rounded-full border ${
-                groupTab === GROUP_TAB.SETTINGS ? "bg-gray-100" : "bg-white"
+              className={`px-3 py-2 rounded-full border border-neutral-700 text-white ${
+                groupTab === GROUP_TAB.SETTINGS ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
               }`}
               onClick={() => setGroupTab(GROUP_TAB.SETTINGS)}
               type="button"
@@ -123,15 +123,15 @@ export default function GroupDetail({
       </div>
 
       {groupTab === GROUP_TAB.COLLECTION && (
-        <div className="bg-white p-4 rounded-2xl shadow border">
+        <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xl font-semibold">Group collection</h3>
+            <h3 className="text-xl font-semibold text-white">Group collection</h3>
 
             <div className="flex items-center gap-2">
               {groupId && myCollectionGames && onSetMyGameSharedInGroup && (
                 <button
                   type="button"
-                  className="px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
+                  className="px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white bg-neutral-700 hover:bg-neutral-600"
                   onClick={() => setGroupTab(GROUP_TAB.MANAGE)}
                   title="Choose which games from your library are shared with this group"
                 >
@@ -139,7 +139,7 @@ export default function GroupDetail({
                 </button>
               )}
 
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-gray-300">
                 {filteredGames.length} / {poolCounts.total} games
               </span>
             </div>
@@ -148,8 +148,8 @@ export default function GroupDetail({
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-full border text-sm ${
-                poolFilter === POOL_FILTER.ALL ? "bg-gray-100" : "bg-white"
+              className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white ${
+                poolFilter === POOL_FILTER.ALL ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
               }`}
               onClick={() => setPoolFilter(POOL_FILTER.ALL)}
               title="Show all games"
@@ -159,8 +159,8 @@ export default function GroupDetail({
 
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-full border text-sm ${
-                poolFilter === POOL_FILTER.IN_POOL ? "bg-gray-100" : "bg-white"
+              className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white ${
+                poolFilter === POOL_FILTER.IN_POOL ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
               }`}
               onClick={() => setPoolFilter(POOL_FILTER.IN_POOL)}
               title="Show games that are already in the pool"
@@ -170,8 +170,8 @@ export default function GroupDetail({
 
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-full border text-sm ${
-                poolFilter === POOL_FILTER.OUT_OF_POOL ? "bg-gray-100" : "bg-white"
+              className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white ${
+                poolFilter === POOL_FILTER.OUT_OF_POOL ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
               }`}
               onClick={() => setPoolFilter(POOL_FILTER.OUT_OF_POOL)}
               title="Show games that are not in the pool"
@@ -181,13 +181,13 @@ export default function GroupDetail({
           </div>
 
           {poolCounts.total === 0 ? (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-gray-300">
               No games in this group yet. Add games to your collection to
               populate it.
             </p>
           ) : (
             filteredGames.length === 0 ? (
-              <p className="text-sm text-gray-600">No games match this filter.</p>
+              <p className="text-sm text-gray-300">No games match this filter.</p>
             ) : (
             <div className="mx-auto max-w-6xl">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 items-start">
@@ -233,18 +233,18 @@ export default function GroupDetail({
       )}
 
       {groupTab === GROUP_TAB.MANAGE && (
-        <div className="bg-white p-4 rounded-2xl shadow border">
+        <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
-              <h3 className="text-xl font-semibold">Manage my games</h3>
-              <p className="text-sm text-gray-600">
+              <h3 className="text-xl font-semibold text-white">Manage my games</h3>
+              <p className="text-sm text-gray-300">
                 Choose which games from your library are shared with <span className="font-medium">{group?.name || "this group"}</span>.
               </p>
             </div>
 
             <button
               type="button"
-              className="px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
+              className="px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white bg-neutral-700 hover:bg-neutral-600"
               onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
               disabled={!!manageBusyId}
             >
@@ -254,7 +254,7 @@ export default function GroupDetail({
 
           <div className="flex items-center gap-2 mb-3">
             <input
-              className="w-full px-3 py-2 border rounded-xl"
+              className="w-full px-3 py-2 border border-neutral-700 rounded-xl bg-neutral-900 text-white placeholder-gray-400"
               placeholder="Search my library…"
               value={manageQuery}
               onChange={(e) => setManageQuery(e.target.value)}
@@ -262,7 +262,7 @@ export default function GroupDetail({
           </div>
 
           {(myCollectionGames || []).length === 0 ? (
-            <p className="text-sm text-gray-600">Your collection is empty.</p>
+            <p className="text-sm text-gray-300">Your collection is empty.</p>
           ) : (
             <div className="max-h-[70vh] overflow-auto divide-y">
               {[...(myCollectionGames || [])]
@@ -276,14 +276,14 @@ export default function GroupDetail({
                   return (
                     <div key={g.id} className="py-3 flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-medium truncate">{g.title}</div>
-                        <div className="text-xs text-gray-500">{shared ? "Shared with group" : "Hidden from group"}</div>
+                        <div className="font-medium truncate text-white">{g.title}</div>
+                        <div className="text-xs text-gray-400">{shared ? "Shared with group" : "Hidden from group"}</div>
                       </div>
 
                       <button
                         type="button"
-                        className={`px-3 py-1.5 rounded-full border text-sm whitespace-nowrap ${
-                          shared ? "bg-white hover:bg-gray-50" : "bg-gray-100 hover:bg-gray-200"
+                        className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm whitespace-nowrap text-white ${
+                          shared ? "bg-neutral-700 hover:bg-neutral-600" : "bg-neutral-900 hover:bg-neutral-800"
                         }`}
                         disabled={busy}
                         onClick={async () => {

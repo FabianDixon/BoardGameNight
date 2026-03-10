@@ -86,6 +86,23 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
   );
 }
 
+function normalizePlayedGameIds(playedGameIds, winnerGameId) {
+  const winnerId = typeof winnerGameId === "string" && winnerGameId.trim()
+    ? winnerGameId.trim()
+    : null;
+
+  const uniqueIds = [];
+  for (const value of Array.isArray(playedGameIds) ? playedGameIds : []) {
+    const id = String(value || "").trim();
+    if (!id || uniqueIds.includes(id)) continue;
+    uniqueIds.push(id);
+  }
+
+  if (!winnerId) return uniqueIds;
+
+  return [winnerId, ...uniqueIds.filter((id) => id !== winnerId)];
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -129,6 +146,8 @@ export default function App() {
   const { myBallot, voteBallots } = useVoteBallots(user, currentGroupId, activeVote?.id, groupAccessReady);
 
   const [winnerModal, setWinnerModal] = useState(null);
+  const [sessionPlayRecord, setSessionPlayRecord] = useState(null);
+  const [isSavingSessionPlay, setIsSavingSessionPlay] = useState(false);
 
   const poolDocs = useGroupPool(currentGroupId, groupAccessReady);
   const mySubmissionGameId = useMySubmission(user?.uid, currentGroupId, activeVote?.id, groupAccessReady);
@@ -559,6 +578,43 @@ export default function App() {
     [sessionMeta?.sessionIndex]
   );
 
+  useEffect(() => {
+    if (!currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) {
+      setSessionPlayRecord(null);
+      return;
+    }
+
+    const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
+
+    const unsub = onSnapshot(
+      playRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setSessionPlayRecord(null);
+          return;
+        }
+
+        const data = snap.data() || {};
+        const winnerGameId = typeof data.winnerGameId === "string"
+          ? data.winnerGameId
+          : (activeVote?.winnerGameId || null);
+
+        setSessionPlayRecord({
+          id: snap.id,
+          ...data,
+          winnerGameId,
+          playedGameIds: normalizePlayedGameIds(data.playedGameIds, winnerGameId),
+        });
+      },
+      (err) => {
+        console.error("Failed to load session play record:", err);
+        setSessionPlayRecord(null);
+      }
+    );
+
+    return unsub;
+  }, [currentGroupId, activeVote?.id, activeVote?.status, activeVote?.winnerGameId]);
+
   // --- Actions ---
   const showToast = useCallback((message, type = "info", title = "") => {
     const id =
@@ -575,6 +631,58 @@ export default function App() {
   const closeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds }) => {
+    if (!user || !currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) {
+      return;
+    }
+
+    if (!canManageSession) {
+      showToast("Only the session owner (or group owner) can update session history.", "error");
+      return;
+    }
+
+    const now = Date.now();
+    const winnerGameId = activeVote?.winnerGameId || null;
+    const normalizedPlayedGameIds = normalizePlayedGameIds(playedGameIds, winnerGameId);
+    const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
+
+    const payload = {
+      groupId: currentGroupId,
+      voteId: activeVote.id,
+      sessionIndex:
+        typeof sessionPlayRecord?.sessionIndex === "number"
+          ? sessionPlayRecord.sessionIndex
+          : null,
+      playedAt: typeof playedAt === "number" ? playedAt : null,
+      winnerGameId,
+      playedGameIds: normalizedPlayedGameIds,
+      createdAt:
+        typeof sessionPlayRecord?.createdAt === "number"
+          ? sessionPlayRecord.createdAt
+          : now,
+      updatedAt: now,
+      createdBy: sessionPlayRecord?.createdBy || user.uid,
+    };
+
+    try {
+      setIsSavingSessionPlay(true);
+      await setDoc(playRef, payload, { merge: true });
+      showToast("Session history saved ✅", "success");
+    } catch (e) {
+      console.error("saveSessionPlay failed:", e);
+      showToast(e.code || e.message || "Failed to save session history.", "error");
+    } finally {
+      setIsSavingSessionPlay(false);
+    }
+  }, [
+    user,
+    currentGroupId,
+    activeVote,
+    canManageSession,
+    sessionPlayRecord,
+    showToast,
+  ]);
 
   function openEditGame(game) {
     setEditGameForm({
@@ -1315,7 +1423,7 @@ export default function App() {
         );
       }
 
-      // Winner leaves pool, write play log
+      // Winner leaves pool
       if (winnerGameId) {
         const winnerPoolRef = doc(db, "groups", currentGroupId, "pool", winnerGameId);
 
@@ -1330,15 +1438,25 @@ export default function App() {
           },
           { merge: true }
         );
-
-        const playRef = doc(collection(db, "groups", currentGroupId, "plays"));
-        batch.set(playRef, {
-          gameId: winnerGameId,
-          playedAt: now,
-          voteId: activeVote.id,
-          recordedBy: user.uid,
-        });
       }
+
+      // Upsert session history/play record for this vote
+      const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
+      batch.set(
+        playRef,
+        {
+          groupId: currentGroupId,
+          voteId: activeVote.id,
+          sessionIndex,
+          playedAt: now,
+          winnerGameId: winnerGameId || null,
+          playedGameIds: normalizePlayedGameIds([], winnerGameId),
+          createdAt: now,
+          updatedAt: now,
+          createdBy: user.uid,
+        },
+        { merge: true }
+      );
 
       await batch.commit();
 
@@ -1933,12 +2051,12 @@ export default function App() {
     !isEditGameOpen;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-6">
-      <div className="sticky top-0 z-40 -mx-6 px-6 pt-4 pb-3 bg-gray-100/90 backdrop-blur border-b border-gray-200">
+    <div className="min-h-screen bg-neutral-900 p-6">
+      <div className="sticky top-0 z-40 -mx-6 px-6 pt-4 pb-3 bg-neutral-900/95 backdrop-blur border-b border-neutral-800">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold leading-tight">🎲 Board Game Night</h1>
-            <p className="text-xs md:text-sm text-gray-600">
+            <h1 className="text-2xl md:text-3xl font-bold leading-tight text-white">🎲 Board Game Night</h1>
+            <p className="text-xs md:text-sm text-gray-400">
               {activeTab === APP_TAB.LIBRARY && "Browse the full library"}
               {activeTab === APP_TAB.COLLECTION && "Games you can bring"}
               {activeTab === APP_TAB.GROUP && "Pick a group and vote"}
@@ -1960,8 +2078,8 @@ export default function App() {
                 <button
                   key={t.key}
                   className={`px-3 py-2 rounded-full border transition ${isActive
-                      ? "bg-white border-gray-300 shadow-sm"
-                      : "bg-gray-100 border-gray-200 hover:bg-gray-50"
+                      ? "bg-neutral-800 border-neutral-700 shadow-sm"
+                      : "bg-neutral-900 border-neutral-700 hover:bg-neutral-800"
                     }`}
                   onClick={() => {
                     setActiveTab(t.key);
@@ -1971,7 +2089,7 @@ export default function App() {
                   disabled={t.key === APP_TAB.COLLECTION && !user}
                   title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
                 >
-                  <span className="text-sm font-medium text-gray-900">{t.label}</span>
+                  <span className="text-sm font-medium text-gray-100">{t.label}</span>
                 </button>
               );
             })}
@@ -2182,6 +2300,9 @@ export default function App() {
                         groupMemberCount={groupMemberCount}
                         submissionsCount={submissionsCount}
                         ballotsCount={ballotsCount}
+                        sessionPlayRecord={sessionPlayRecord}
+                        onSaveSessionPlay={saveSessionPlay}
+                        isSavingSessionPlay={isSavingSessionPlay}
                       />
                     }
                     canEditNewness={user?.uid === currentGroup?.ownerId}

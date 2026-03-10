@@ -165,6 +165,10 @@ Completed work includes:
 	•	voting/session lifecycle hardening
 	•	hook reset-on-gate-off fixes to prevent stale state bleeding across group/session/user changes
 	•	a second follow-up audit after the stabilization work
+	•	implementation of explicit “No Submission” support during the collecting phase, including submission-state editing before voting opens
+	•	landing-page sign-in flow fix so the initial sign-in path now routes correctly into the working authentication flow
+	•	introduction of the first session-history / played-session tracking foundation using persisted play records keyed by vote/session
+	•	creation of a local firestore.rules source of truth in the repo and wiring it into Firebase project configuration
 
 The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
 
@@ -175,23 +179,25 @@ Current Product Roadmap Before UI/UX Overhaul
 Before starting a major UI/UX redesign, the next planned work is:
 
 1. Submission Phase Improvement
-	•	Allow a user to explicitly choose “No Submission” during the collecting phase.
-	•	This should count as a completed submission-state for auto-advance purposes.
-	•	Users should still be able to change from “No Submission” to a real game submission until voting opens.
-	•	The UX should make it clear that “No Submission” is an intentional state change, not a failed action.
+	•	This has now been implemented as an explicit submission-state during the collecting phase.
+	•	Users can choose “No Submission” and still count toward auto-advance.
+	•	Users can also change between a real submission and “No Submission” before voting opens.
+	•	Any remaining follow-up work here should be treated as small UX polish rather than a missing core feature.
 
 2. Landing Page Sign-In Bug Fix
-	•	The sign-in path from the landing page currently does not work correctly.
-	•	A workaround exists through guest mode → profile → sign in, but the main entry path should be fixed before shipping.
+	•	This has now been fixed so the landing-page sign-in path enters the same working authentication flow used elsewhere in the app.
+	•	Any remaining work here should be limited to minor auth UX polish or regression testing.
 
 3. Session History / Played Session Tracking
-	•	Add a data model and UI flow to record session history after a vote/session completes.
-	•	Initial goals include:
+	•	A first foundation patch has now been implemented using persisted play/session records per completed vote.
+	•	The current foundation includes:
 		•	automatically logging the selected winner game
 		•	allowing additional played games to be recorded
 		•	allowing the played date to be recorded
-		•	recording player placements / medals with support for ties, cooperative outcomes, or no winner
-	•	This feature is intended to become the foundation for future history views, scoreboards, and play statistics.
+	•	The next planned work in this area is:
+		•	read-only history browsing/listing for past sessions
+		•	medals / placements with support for ties, cooperative outcomes, or no winner
+		•	future scoreboards and statistics built on top of the stored session data
 
 4. Game Labels / Tags
 	•	Add labels/tags to games so they can be filtered across the app.
@@ -207,11 +213,14 @@ These items should generally be approached before the UI overhaul so that the re
 Current Development Strategy
 
 The preferred sequence is now:
-	1.	focused feature/bug tickets for the items above
+	1.	finish the current pre-UI feature set, especially session-history follow-up work and game labels/tags
 	2.	confirm stability with light regression testing
-	3.	plan the UI/UX overhaul using the updated feature set and data model
+	3.	establish the styling foundation needed for the UI/UX overhaul
+	4.	plan the UI/UX overhaul using the updated feature set and data model
 
 The project is no longer primarily in a “cleanup first” phase. Remaining technical cleanup should be driven by concrete upcoming work rather than general architectural ambition.
+
+One important current consideration is the styling foundation for the upcoming overhaul. Recent work strongly suggests the project has been using Tailwind-style utility classes without a fully working Tailwind pipeline. Before major UI redesign work begins, the styling/tooling setup should be confirmed and corrected so visual changes behave predictably.
 
 ⸻
 
@@ -254,3 +263,13 @@ Note:
 	•	This task has already been completed during the initial stabilization phase and is preserved here as historical context for future contributors.
 
 ⸻
+
+Current Known Follow-Up Items
+
+The highest-value near-term follow-up items are now:
+	•	complete the next session-history patches, especially read-only history browsing and later medals/placements
+	•	implement game labels/tags
+	•	confirm and, if necessary, fix the styling foundation (including Tailwind/tooling setup) before the UI overhaul
+	•	run light regression testing on the recently completed collecting-phase, auth-entry, and session-history flows
+
+These should be treated as the bridge between the stabilization/product-foundation phase and the later UI/UX overhaul.
