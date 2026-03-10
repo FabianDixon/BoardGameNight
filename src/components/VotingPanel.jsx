@@ -109,6 +109,15 @@ function fromDateInputValue(value) {
   return Number.isFinite(t) ? t : null;
 }
 
+function formatPlayedDate(timestamp) {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return "Date not set";
+  const d = new Date(timestamp);
+  if (Number.isNaN(d.getTime())) return "Invalid date";
+  
+  const options = { year: "numeric", month: "short", day: "numeric" };
+  return d.toLocaleDateString(undefined, options);
+}
+
 function VotingPanelInner({
   user,
   currentGroupId,
@@ -134,6 +143,7 @@ function VotingPanelInner({
   sessionPlayRecord,
   onSaveSessionPlay,
   isSavingSessionPlay,
+  sessionHistory,
 
   canEmailSession,
   canManageSession,
@@ -370,9 +380,9 @@ function VotingPanelInner({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl shadow border p-4">
-        <h2 className="text-2xl font-bold">Session</h2>
-        <div className="mt-2 text-sm text-gray-700">
+      <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4">
+        <h2 className="text-2xl font-bold text-white">Session</h2>
+        <div className="mt-2 text-sm text-gray-300">
           Active:{" "}
           <span className="font-semibold">
             {activeVote ? `Session (${activeVote.status || "?"})` : "—"}
@@ -381,20 +391,20 @@ function VotingPanelInner({
 
         {activeVote?.status === VOTE_STATUS.COLLECTING && (
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
-            <span className="px-2 py-1 rounded-full border bg-gray-50">
+            <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-900 text-white">
               Submissions: <span className="font-semibold tabular-nums">
                 {formatProgress(submissionsCount, groupMemberCount)}
               </span>
             </span>
 
             {isNoSubmission && (
-              <span className="px-2 py-1 rounded-full border bg-blue-50 text-blue-800">
+              <span className="px-2 py-1 rounded-full border border-neutral-700 bg-blue-900 text-blue-300">
                 ⊗ No Submission
               </span>
             )}
 
             {mySubId && !isNoSubmission && (
-              <span className="px-2 py-1 rounded-full border bg-green-50 text-green-800">
+              <span className="px-2 py-1 rounded-full border border-neutral-700 bg-green-900 text-green-300">
                 ✅ Submitted
               </span>
             )}
@@ -403,14 +413,14 @@ function VotingPanelInner({
 
         {activeVote?.status === VOTE_STATUS.OPEN && (
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
-            <span className="px-2 py-1 rounded-full border bg-gray-50">
+            <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-900 text-gray-300">
               Votes: <span className="font-semibold tabular-nums">
                 {formatProgress(ballotsCount, groupMemberCount)}
               </span>
             </span>
 
             {alreadyVoted && (
-              <span className="px-2 py-1 rounded-full border bg-green-50 text-green-800">
+              <span className="px-2 py-1 rounded-full border border-neutral-700 bg-green-900 text-green-300">
                 ✅ Voted
               </span>
             )}
@@ -420,7 +430,7 @@ function VotingPanelInner({
         <div className="mt-3 flex flex-wrap gap-2">
           {!activeVote && (
             <button
-              className="px-4 py-2 rounded-xl border bg-white"
+              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
               onClick={onCallSession}
             >
               Call session
@@ -429,7 +439,7 @@ function VotingPanelInner({
 
           {activeVote?.status === VOTE_STATUS.COLLECTING && canManageSession && (
             <button
-              className="px-4 py-2 rounded-xl border bg-white"
+              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
               onClick={onStartVoting}
             >
               Start voting
@@ -438,7 +448,7 @@ function VotingPanelInner({
 
           {activeVote?.status === VOTE_STATUS.OPEN && (
             <button
-              className="px-4 py-2 rounded-xl border bg-white"
+              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
               onClick={onCloseVote}
               disabled={!canCloseActiveVote}
               title={!canCloseActiveVote ? "Only session/group owner can close" : ""}
@@ -450,7 +460,7 @@ function VotingPanelInner({
           {activeVote?.status === VOTE_STATUS.CLOSED && (
             <>
               <button
-                className="px-4 py-2 rounded-xl border bg-white"
+                className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
                 onClick={() => onExportSession?.(activeVote.id)}
               >
                 Download JSON
@@ -458,7 +468,7 @@ function VotingPanelInner({
 
               {canEmailSession && (
                 <button
-                  className="px-4 py-2 rounded-xl border bg-white"
+                  className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
                   onClick={() => onEmailSession?.(activeVote.id)}
                 >
                   Email JSON
@@ -466,7 +476,7 @@ function VotingPanelInner({
               )}
 
               <button
-                className="px-4 py-2 rounded-xl border bg-white"
+                className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
                 onClick={onCallSession}
               >
                 Call next session
@@ -476,7 +486,7 @@ function VotingPanelInner({
         </div>
 
         {activeVote?.status === VOTE_STATUS.COLLECTING && (
-          <div className="mt-4 text-sm text-gray-700">
+          <div className="mt-4 text-sm text-gray-300">
             Your submission:{" "}
             <span className="font-semibold">
               {isNoSubmission
@@ -489,7 +499,7 @@ function VotingPanelInner({
         )}
 
         {activeVote?.status === VOTE_STATUS.OPEN && (
-          <div className="mt-4 text-sm text-gray-700">
+          <div className="mt-4 text-sm text-gray-300">
             Your vote:{" "}
             <span className="font-semibold">
               {myBallot?.gameId ? titleById(gameMap, myBallot.gameId) : "—"}
@@ -499,9 +509,9 @@ function VotingPanelInner({
       </div>
 
       {activeVote?.status === VOTE_STATUS.COLLECTING && (
-        <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
-          <h3 className="text-xl font-semibold">Submit one game</h3>
-          <p className="text-sm text-gray-600">
+        <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4 space-y-3 pb-28">
+          <h3 className="text-xl font-semibold text-white">Submit game</h3>
+          <p className="text-sm text-gray-300">
             Select a game and press <span className="font-semibold">Submit</span>, or choose{" "}
             <span className="font-semibold">No Submission</span> if you don't want to submit a game this round.
           </p>
@@ -510,7 +520,7 @@ function VotingPanelInner({
             type="button"
             onClick={onSubmitNoSubmission}
             disabled={!canSubmit}
-            className="w-full px-4 py-3 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400 transition text-sm font-medium text-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-4 py-3 rounded-xl border-2 border-dashed border-neutral-700 bg-neutral-900 hover:bg-neutral-800 hover:border-neutral-600 transition text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             ⊗ {isNoSubmission ? "Already marked as no submission" : "No Submission"}
           </button>
@@ -520,11 +530,11 @@ function VotingPanelInner({
             placeholder="Search by title..."
             value={phaseSearch}
             onChange={(e) => setPhaseSearch(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-neutral-700 rounded-lg px-3 py-2 text-sm bg-neutral-900 text-white placeholder-gray-500"
           />
         
           {filteredSubmissionGames.length === 0 ? (
-            <p className="text-sm text-gray-600">No matches for “{phaseSearch}”.</p>
+            <p className="text-sm text-gray-300">No matches for "{phaseSearch}".</p>
           ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
             {filteredSubmissionGames.map((g) => {
@@ -551,9 +561,9 @@ function VotingPanelInner({
       )}
 
       {activeVote?.status === VOTE_STATUS.OPEN && (
-        <div className="bg-white rounded-2xl shadow border p-4 space-y-3 pb-28">
-          <h3 className="text-xl font-semibold">Cast your vote</h3>
-          <p className="text-sm text-gray-600">
+        <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4 space-y-3 pb-28">
+          <h3 className="text-xl font-semibold text-white">Cast your vote</h3>
+          <p className="text-sm text-gray-300">
             Select a game, then press <span className="font-semibold">Vote</span>. Your vote is secret until revealed.
           </p>
 
@@ -562,10 +572,10 @@ function VotingPanelInner({
             placeholder="Search by title..."
             value={phaseSearch}
             onChange={(e) => setPhaseSearch(e.target.value)}
-            className="w-full border rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-neutral-700 rounded-lg px-3 py-2 text-sm bg-neutral-900 text-white placeholder-gray-500"
           />
           {filteredCandidateIds.length === 0 ? (
-            <p className="text-sm text-gray-600">No matches for “{phaseSearch}”.</p>
+            <p className="text-sm text-gray-300">No matches for "{phaseSearch}".</p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 items-start">
               {filteredCandidateIds.map((id) => {
@@ -598,20 +608,20 @@ function VotingPanelInner({
       )}
 
       {activeVote?.status === VOTE_STATUS.CLOSED && (
-        <div className="bg-white rounded-2xl shadow border p-4 space-y-3">
-          <h3 className="text-xl font-semibold">Results</h3>
+        <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4 space-y-3">
+          <h3 className="text-xl font-semibold text-white">Results</h3>
 
           {winnerRow ? (
-            <div className="p-3 rounded-xl border bg-gray-50">
-              <div className="text-sm text-gray-600">Winner</div>
-              <div className="text-lg font-semibold flex items-center gap-2">
+            <div className="p-3 rounded-xl border border-neutral-700 bg-neutral-900">
+              <div className="text-sm text-gray-400">Winner</div>
+              <div className="text-lg font-semibold flex items-center gap-2 text-white">
                 {winnerRow.title}
-                <span className="text-xs px-2 py-0.5 rounded-full border bg-white">
+                <span className="text-xs px-2 py-0.5 rounded-full border border-neutral-700 bg-neutral-800 text-gray-300">
                   🏆 Winner
                 </span>
               </div>
 
-              <div className="text-sm text-gray-700 mt-1">
+              <div className="text-sm text-gray-300 mt-1">
                 Score:{" "}
                 <span className="font-semibold tabular-nums">
                   {formatScore(winnerRow.score)}
@@ -621,13 +631,13 @@ function VotingPanelInner({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">No winner recorded (no votes cast).</p>
+            <p className="text-sm text-gray-300">No winner recorded (no votes cast).</p>
           )}
 
           <div>
-            <div className="text-sm font-semibold mb-2">Scores</div>
+            <div className="text-sm font-semibold mb-2 text-white">Scores</div>
             {scoredResults.length === 0 ? (
-              <p className="text-sm text-gray-600">No results.</p>
+              <p className="text-sm text-gray-300">No results.</p>
             ) : (
               <ul className="text-sm space-y-1">
                 {scoredResults.map((r) => (
@@ -635,13 +645,13 @@ function VotingPanelInner({
                     key={r.gameId}
                     className="flex items-center justify-between gap-3"
                   >
-                    <span className={r.isWinner ? "font-semibold" : ""}>
+                    <span className={r.isWinner ? "font-semibold text-white" : "text-gray-300"}>
                       {r.isWinner ? "🏆 " : ""}
                       {r.title}
                     </span>
-                    <span className="tabular-nums text-gray-700">
+                    <span className="tabular-nums text-gray-300">
                       {formatScore(r.score)}
-                      <span className="text-gray-500">
+                      <span className="text-gray-400">
                         {" "}
                         · {r.votes} vote{r.votes === 1 ? "" : "s"}
                       </span>
@@ -652,45 +662,45 @@ function VotingPanelInner({
             )}
           </div>
 
-          <div className="pt-2 border-t space-y-3">
-            <div className="text-sm font-semibold">Session history</div>
+          <div className="pt-2 border-t border-neutral-700 space-y-3">
+            <div className="text-sm font-semibold text-white">Session history</div>
 
-            <div className="text-xs text-gray-600">
+            <div className="text-xs text-gray-400">
               Session: <span className="font-mono">{activeVote?.id || "—"}</span>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Played date</label>
+              <label className="block text-sm font-medium mb-1 text-gray-300">Played date</label>
               <input
                 type="date"
                 value={historyPlayedDate}
                 onChange={(e) => setHistoryPlayedDate(e.target.value)}
-                className="w-full border rounded-lg px-3 py-2 text-sm"
+                className="w-full border border-neutral-700 rounded-lg px-3 py-2 text-sm bg-neutral-900 text-white"
               />
             </div>
 
             <div className="space-y-3">
               <div>
-                <div className="text-sm font-medium mb-1">Primary played game</div>
+                <div className="text-sm font-medium mb-1 text-gray-300">Primary played game</div>
                 {winnerGameId ? (
-                  <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm flex items-center justify-between gap-3">
-                    <span className="font-medium">{titleById(gameMap, winnerGameId)}</span>
-                    <span className="text-xs text-gray-600">Winner (prefilled)</span>
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm flex items-center justify-between gap-3">
+                    <span className="font-medium text-white">{titleById(gameMap, winnerGameId)}</span>
+                    <span className="text-xs text-gray-400">Winner (prefilled)</span>
                   </div>
                 ) : (
-                  <div className="rounded-lg border bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-gray-400">
                     No winner was recorded for this session.
                   </div>
                 )}
               </div>
 
               <div>
-                <div className="text-sm font-medium mb-1">Additional played games</div>
-                <div className="text-xs text-gray-600 mb-2">
+                <div className="text-sm font-medium mb-1 text-gray-300">Additional played games</div>
+                <div className="text-xs text-gray-400 mb-2">
                   Select any other games the group also played.
                 </div>
 
-                <div className="rounded-lg border border-gray-200 bg-white">
+                <div className="rounded-lg border border-neutral-700 bg-neutral-900">
                   <div className="max-h-60 overflow-y-auto">
                     {historyOptions
                       .filter((g) => g.id !== winnerGameId)
@@ -699,7 +709,7 @@ function VotingPanelInner({
                         return (
                           <label
                             key={g.id}
-                            className="flex w-full items-start gap-3 px-3 py-3 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50"
+                            className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800"
                           >
                             <input
                               type="checkbox"
@@ -707,7 +717,7 @@ function VotingPanelInner({
                               checked={checked}
                               onChange={() => togglePlayedGame(g.id)}
                             />
-                            <span className="block flex-1 min-w-0 break-words text-sm leading-5">
+                            <span className="block flex-1 min-w-0 break-words text-sm leading-5 text-gray-300">
                               {g.title}
                             </span>
                           </label>
@@ -720,7 +730,7 @@ function VotingPanelInner({
 
             <button
               type="button"
-              className="px-4 py-2 rounded-xl border bg-white disabled:opacity-50"
+              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white disabled:opacity-50"
               onClick={handleSaveSessionPlay}
               disabled={!canManageSession || isSavingSessionPlay}
               title={!canManageSession ? "Only session/group owner can save" : ""}
@@ -730,6 +740,64 @@ function VotingPanelInner({
           </div>
         </div>
       )}
+
+      {/* Session History */}
+      {sessionHistory && sessionHistory.length > 0 && (
+        <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4">
+          <h3 className="text-xl font-semibold mb-3 text-white">Session History</h3>
+          
+          <div className="space-y-3">
+            {sessionHistory.map((play) => {
+              const winnerTitle = play.winnerGameId
+                ? titleById(gameMap, play.winnerGameId)
+                : "No winner";
+              
+              const playedGamesList = Array.isArray(play.playedGameIds)
+                ? play.playedGameIds.filter((id) => id !== play.winnerGameId)
+                : [];
+              
+              const additionalCount = playedGamesList.length;
+
+              return (
+                <div
+                  key={play.id}
+                  className="rounded-xl border border-neutral-700 bg-neutral-900 p-3"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="text-sm text-gray-400">
+                      {formatPlayedDate(play.playedAt)}
+                    </div>
+                    {play.sessionIndex != null && (
+                      <div className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-gray-400">
+                        Session #{play.sessionIndex}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-2">
+                    <div className="text-sm text-gray-400 mb-1">Winner</div>
+                    <div className="font-medium text-white flex items-center gap-2">
+                      🏆 {winnerTitle}
+                    </div>
+                  </div>
+
+                  {additionalCount > 0 && (
+                    <div>
+                      <div className="text-xs text-gray-400 mb-1">
+                        Also played ({additionalCount})
+                      </div>
+                      <div className="text-sm text-gray-300">
+                        {playedGamesList.map((id) => titleById(gameMap, id)).join(", ")}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <Fab
         show={activeVote?.status === VOTE_STATUS.COLLECTING}
         variant="pill"
@@ -759,6 +827,7 @@ export default function VotingPanel(props) {
     props.activeVote?.status || "none",
     props.sessionPlayRecord?.updatedAt || "no-play-update",
     props.sessionPlayRecord?.playedAt || "no-played-at",
+    props.sessionHistory?.length || 0,
   ].join(":");
   return <VotingPanelInner key={phaseKey} {...props} />;
 }
