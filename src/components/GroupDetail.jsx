@@ -13,6 +13,7 @@ export default function GroupDetail({
   onOpenGame,
   onToast,
   votingNode, 
+  historyNode,
   settingsNode,
   canEditNewness,
   onTogglePlayedOverride,
@@ -43,29 +44,31 @@ export default function GroupDetail({
 
   return (
     <div className="space-y-4">
-      <div className="ui-surface p-4">
+      <div className="ui-surface p-4 md:p-5 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <button
-              className="text-sm text-blue-400 hover:underline"
+              className="ui-btn-ghost px-3 py-1.5 text-xs"
               onClick={onBack}
               type="button"
             >
               ← Back to groups
             </button>
 
-            <h2 className="text-2xl font-bold mt-2 truncate text-white">
+            <h2 className="text-2xl md:text-3xl font-bold mt-3 truncate text-white">
               {group?.name || "Group"}
             </h2>
 
+            <p className="text-sm text-neutral-400 mt-1">Your shared group for collection, sessions, and group decisions.</p>
+
             {groupId && (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-xs text-gray-400">Invite code:</span>
-                <code className="px-2 py-1 text-xs bg-neutral-900 border border-neutral-700 rounded font-mono text-gray-300">
+              <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2">
+                <span className="text-xs uppercase tracking-wider text-neutral-500">Invite</span>
+                <code className="px-2 py-1 text-xs bg-neutral-800 border border-neutral-700 rounded font-mono text-gray-300">
                   {groupId}
                 </code>
                 <button
-                  className="text-sm text-blue-400 hover:underline"
+                  className="ui-btn-secondary px-2.5 py-1 text-xs"
                   type="button"
                   onClick={async () => {
                     await navigator.clipboard.writeText(groupId);
@@ -80,7 +83,7 @@ export default function GroupDetail({
 
           {groupId && onLeaveGroup && (
             <button
-              className="text-sm text-red-400 hover:underline shrink-0"
+              className="ui-btn-danger px-3 py-1.5 text-xs shrink-0"
               type="button"
               onClick={() => onLeaveGroup(groupId)}
             >
@@ -89,7 +92,7 @@ export default function GroupDetail({
           )}
         </div>
 
-        <div className="mt-4 flex gap-2 flex-wrap">
+        <div className="ui-segmented">
           <button
             className={`ui-segment ${
               groupTab === GROUP_TAB.COLLECTION ? "ui-pill-active" : "ui-pill-inactive"
@@ -107,6 +110,15 @@ export default function GroupDetail({
             type="button"
           >
             Voting
+          </button>
+          <button
+            className={`ui-segment ${
+              groupTab === GROUP_TAB.HISTORY ? "ui-pill-active" : "ui-pill-inactive"
+            }`}
+            onClick={() => setGroupTab(GROUP_TAB.HISTORY)}
+            type="button"
+          >
+            History
           </button>
           {settingsNode && (
             <button
@@ -307,6 +319,13 @@ export default function GroupDetail({
       )}
 
       {groupTab === GROUP_TAB.VOTING && votingNode}
+      {groupTab === GROUP_TAB.HISTORY && (
+        historyNode || (
+          <div className="ui-surface p-4">
+            <p className="text-sm text-neutral-300">No history available yet.</p>
+          </div>
+        )
+      )}
       {groupTab === GROUP_TAB.SETTINGS && settingsNode}
     </div>
   );

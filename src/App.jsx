@@ -2405,8 +2405,127 @@ export default function App() {
                         onSaveSessionPlay={saveSessionPlay}
                         isSavingSessionPlay={isSavingSessionPlay}
                         sessionHistory={sessionHistory}
+                        showArchiveHistory={false}
                       />
                     }
+                    historyNode={(
+                      <div className="ui-surface p-4 md:p-5 space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-xl font-semibold text-white">Session history</h3>
+                          <span className="ui-chip-muted">{sessionHistory?.length || 0}</span>
+                        </div>
+
+                        {sessionHistory && sessionHistory.length > 0 ? (
+                          <div className="space-y-3">
+                            {sessionHistory.map((play) => {
+                              const title = play?.winnerGameId
+                                ? (games.find((g) => g.id === play.winnerGameId)?.title || play.winnerGameId)
+                                : "No winner";
+
+                              const playedLabel =
+                                Number.isFinite(play?.playedAt)
+                                  ? new Date(play.playedAt).toLocaleDateString(undefined, {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                    })
+                                  : "Date unknown";
+
+                              const playResultMode = normalizeResultMode(
+                                play?.resultMode,
+                                defaultResultMode(play?.winnerGameId)
+                              );
+
+                              const playPlacements = normalizePlacements(
+                                play?.placements,
+                                playResultMode
+                              );
+
+                              const memberLabel = (userId) => {
+                                const value = String(userId || "").trim();
+                                const member = members.find((m) => m.userId === value);
+                                const nickname = String(member?.nickname || "").trim();
+                                if (nickname) return nickname;
+                                if (!value) return "Unknown member";
+                                return value.length <= 12
+                                  ? value
+                                  : `${value.slice(0, 6)}…${value.slice(-4)}`;
+                              };
+
+                              const resultSummary = (() => {
+                                if (playResultMode === "coop-loss") return "Co-op loss recorded.";
+                                if (playResultMode === "no-winner") return "No player winner recorded.";
+                                if (playResultMode === "coop-win") {
+                                  if (!playPlacements.length) return "Co-op win recorded.";
+                                  return `Co-op winners: ${playPlacements
+                                    .map((entry) => memberLabel(entry.userId))
+                                    .join(", ")}`;
+                                }
+                                if (!playPlacements.length) return "No player placements recorded.";
+
+                                const grouped = new Map();
+                                for (const entry of playPlacements) {
+                                  const names = grouped.get(entry.place) || [];
+                                  names.push(memberLabel(entry.userId));
+                                  grouped.set(entry.place, names);
+                                }
+
+                                return [...grouped.entries()]
+                                  .sort((a, b) => a[0] - b[0])
+                                  .map(([place, names]) => `${place}. ${names.join(", ")}`)
+                                  .join(" · ");
+                              })();
+
+                              const playedGamesList = Array.isArray(play?.playedGameIds)
+                                ? play.playedGameIds.filter((id) => id !== play?.winnerGameId)
+                                : [];
+
+                              return (
+                                <div
+                                  key={play.id}
+                                  className="ui-surface-subtle p-3"
+                                >
+                                  <div className="flex items-start justify-between gap-3 mb-2">
+                                    <div className="text-sm text-neutral-400">{playedLabel}</div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="ui-chip-muted">{playResultMode === "ranked" ? "Ranked" : playResultMode === "coop-win" ? "Co-op win" : playResultMode === "coop-loss" ? "Co-op loss" : "No winner"}</span>
+                                      <span className="ui-chip-blue">Session</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="mb-2">
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Selected game</div>
+                                    <div className="text-sm font-semibold text-white">🎲 {title}</div>
+                                  </div>
+
+                                  <div className="mb-2">
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Result</div>
+                                    <div className="text-sm text-neutral-300">{resultSummary}</div>
+                                  </div>
+
+                                  {playedGamesList.length > 0 && (
+                                    <div>
+                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">
+                                        Also played ({playedGamesList.length})
+                                      </div>
+                                      <div className="text-sm text-neutral-300">
+                                        {playedGamesList
+                                          .map((id) => games.find((g) => g.id === id)?.title || id)
+                                          .join(", ")}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="ui-surface-subtle p-4">
+                            <p className="text-sm text-neutral-300">No session history yet.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     canEditNewness={user?.uid === currentGroup?.ownerId}
                     onTogglePlayedOverride={togglePlayedOverride}
                     settingsNode={

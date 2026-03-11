@@ -287,6 +287,7 @@ function VotingPanelInner({
   onSaveSessionPlay,
   isSavingSessionPlay,
   sessionHistory,
+  showArchiveHistory = true,
 
   canEmailSession,
   canManageSession,
@@ -1090,7 +1091,7 @@ function VotingPanelInner({
       )}
 
       {/* Session History */}
-      {sessionHistory && sessionHistory.length > 0 && (
+      {showArchiveHistory && sessionHistory && sessionHistory.length > 0 && (
         <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4">
           <h3 className="text-xl font-semibold mb-3 text-white">Session History</h3>
           
