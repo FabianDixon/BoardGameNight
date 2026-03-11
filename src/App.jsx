@@ -2409,15 +2409,22 @@ export default function App() {
                       />
                     }
                     historyNode={(
-                      <div className="ui-surface p-4 md:p-5 space-y-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-xl font-semibold text-white">Session history</h3>
-                          <span className="ui-chip-muted">{sessionHistory?.length || 0}</span>
+                      <div className="space-y-4">
+                        <div className="ui-surface p-5 md:p-6">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h2 className="text-2xl md:text-3xl font-bold text-white">Session archive</h2>
+                              <p className="text-sm text-neutral-400 mt-1">
+                                A record of all your group's past sessions and outcomes.
+                              </p>
+                            </div>
+                            <span className="ui-chip-muted text-sm shrink-0">{sessionHistory?.length || 0} session{sessionHistory?.length === 1 ? "" : "s"}</span>
+                          </div>
                         </div>
 
                         {sessionHistory && sessionHistory.length > 0 ? (
-                          <div className="space-y-3">
-                            {sessionHistory.map((play) => {
+                          <div className="space-y-3 px-4 md:px-0">
+                            {sessionHistory.map((play, idx) => {
                               const title = play?.winnerGameId
                                 ? (games.find((g) => g.id === play.winnerGameId)?.title || play.winnerGameId)
                                 : "No winner";
@@ -2472,7 +2479,22 @@ export default function App() {
 
                                 return [...grouped.entries()]
                                   .sort((a, b) => a[0] - b[0])
-                                  .map(([place, names]) => `${place}. ${names.join(", ")}`)
+                                  .map(([place, names]) => {
+                                    const placeLabel = (() => {
+                                      const x = Number(place);
+                                      if (!Number.isFinite(x) || x < 1) return "—";
+                                      const abs = Math.abs(Math.trunc(x));
+                                      const mod100 = abs % 100;
+                                      if (mod100 >= 11 && mod100 <= 13) return `${abs}th`;
+                                      switch (abs % 10) {
+                                        case 1: return `${abs}st`;
+                                        case 2: return `${abs}nd`;
+                                        case 3: return `${abs}rd`;
+                                        default: return `${abs}th`;
+                                      }
+                                    })();
+                                    return `${placeLabel}: ${names.join(", ")}`;
+                                  })
                                   .join(" · ");
                               })();
 
@@ -2483,32 +2505,36 @@ export default function App() {
                               return (
                                 <div
                                   key={play.id}
-                                  className="ui-surface-subtle p-3"
+                                  className="ui-surface p-4 md:p-5 space-y-3"
                                 >
-                                  <div className="flex items-start justify-between gap-3 mb-2">
-                                    <div className="text-sm text-neutral-400">{playedLabel}</div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="ui-chip-muted">{playResultMode === "ranked" ? "Ranked" : playResultMode === "coop-win" ? "Co-op win" : playResultMode === "coop-loss" ? "Co-op loss" : "No winner"}</span>
-                                      <span className="ui-chip-blue">Session</span>
+                                  <div className="flex items-start justify-between gap-4 pb-3 border-b border-neutral-700">
+                                    <div>
+                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Date</div>
+                                      <div className="text-sm font-medium text-neutral-300">{playedLabel}</div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                                      <span className={`ui-chip-${playResultMode === "ranked" ? "blue" : playResultMode === "coop-win" ? "green" : "muted"}`}>
+                                        {playResultMode === "ranked" ? "Ranked" : playResultMode === "coop-win" ? "Co-op win" : playResultMode === "coop-loss" ? "Co-op loss" : "No winner"}
+                                      </span>
                                     </div>
                                   </div>
 
-                                  <div className="mb-2">
-                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Selected game</div>
-                                    <div className="text-sm font-semibold text-white">🎲 {title}</div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Selected game</div>
+                                    <div className="text-lg font-bold text-white">🏆 {title}</div>
                                   </div>
 
-                                  <div className="mb-2">
-                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Result</div>
-                                    <div className="text-sm text-neutral-300">{resultSummary}</div>
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Result</div>
+                                    <div className="text-sm text-neutral-300 leading-relaxed">{resultSummary}</div>
                                   </div>
 
                                   {playedGamesList.length > 0 && (
                                     <div>
-                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">
-                                        Also played ({playedGamesList.length})
+                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">
+                                        Also played <span className="text-blue-400">({playedGamesList.length})</span>
                                       </div>
-                                      <div className="text-sm text-neutral-300">
+                                      <div className="text-sm text-neutral-300 leading-relaxed">
                                         {playedGamesList
                                           .map((id) => games.find((g) => g.id === id)?.title || id)
                                           .join(", ")}
@@ -2520,8 +2546,8 @@ export default function App() {
                             })}
                           </div>
                         ) : (
-                          <div className="ui-surface-subtle p-4">
-                            <p className="text-sm text-neutral-300">No session history yet.</p>
+                          <div className="ui-surface p-5 md:p-6 text-center">
+                            <p className="text-sm text-neutral-400">No session history yet. Complete your first session to start building your archive.</p>
                           </div>
                         )}
                       </div>
