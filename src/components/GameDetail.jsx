@@ -27,7 +27,7 @@ export default function GameDetail({
   const tags = normalizeGameTags(game?.tags);
 
   return (
-    <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-6 max-w-xl">
+    <div className="ui-surface p-6 max-w-xl">
       <div className="flex items-center justify-between mb-4">
         <button className="text-sm text-blue-400 hover:underline" onClick={onBack}>
           ← Back
@@ -35,7 +35,7 @@ export default function GameDetail({
 
         {canEdit && (
           <button
-            className="text-sm border border-neutral-700 rounded px-3 py-1 bg-neutral-700 hover:bg-neutral-600 text-white"
+            className="ui-btn-secondary px-3 py-1"
             onClick={onEdit}
             title="Edit game"
             aria-label="Edit game"
@@ -76,7 +76,7 @@ export default function GameDetail({
             {tags.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center rounded-full border border-neutral-600 bg-neutral-900 px-3 py-1 text-sm text-gray-100"
+                className="ui-chip-muted text-sm"
               >
                 {getGameTagLabel(tag)}
               </span>
@@ -128,8 +128,8 @@ export default function GameDetail({
 
               <button
                 type="button"
-                className={`px-3 py-2 rounded border ${
-                  sharedInGroup ? "bg-neutral-700 border-neutral-700 text-white" : "bg-blue-600 text-white border-blue-600"
+                className={`ui-btn ${
+                  sharedInGroup ? "ui-btn-secondary" : "ui-btn-primary"
                 } disabled:opacity-50`}
                 disabled={!onToggleShareInGroup || !!shareBusy || sharedInGroup == null}
                 onClick={() => onToggleShareInGroup(!(sharedInGroup === true))}

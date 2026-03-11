@@ -40,7 +40,7 @@ export default function GameTagsField({ value, onChange }) {
           tags.map((tag) => (
             <span
               key={tag}
-              className="inline-flex items-center gap-2 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1 text-sm text-blue-100"
+              className="ui-chip-blue text-sm gap-2"
             >
               {getGameTagLabel(tag)}
               <button
@@ -60,8 +60,8 @@ export default function GameTagsField({ value, onChange }) {
 
       <div className="flex gap-2">
         <input
-          className="border border-neutral-700 bg-neutral-900 p-2 w-full rounded text-white placeholder-gray-500"
-          placeholder="Add custom tag"
+          className="w-full text-sm"
+          placeholder="Custom tag"
           value={draftTag}
           onChange={(e) => setDraftTag(e.target.value)}
           onKeyDown={(e) => {
@@ -74,10 +74,10 @@ export default function GameTagsField({ value, onChange }) {
 
         <button
           type="button"
-          className="px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-white"
+          className="ui-btn-ghost px-3"
           onClick={() => addTag(draftTag)}
         >
-          Add tag
+          Add
         </button>
       </div>
 
@@ -92,10 +92,10 @@ export default function GameTagsField({ value, onChange }) {
               <button
                 key={tag}
                 type="button"
-                className={`rounded-full border px-3 py-1 text-sm transition ${
+                className={`ui-pill ${
                   selected
-                    ? "border-blue-500 bg-blue-600 text-white"
-                    : "border-neutral-700 bg-neutral-900 text-gray-200 hover:border-neutral-500"
+                    ? "bg-blue-600 border-blue-500 text-white"
+                    : "ui-pill-inactive"
                 }`}
                 onClick={() => (selected ? removeTag(tag) : addTag(tag))}
               >

@@ -2,6 +2,153 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-neutral-950 text-neutral-100;
+  }
+
+  :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select) {
+    @apply border border-neutral-700 bg-neutral-900 text-neutral-100 rounded-xl px-4 py-2 transition;
+    @apply placeholder:text-neutral-500;
+    @apply focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20;
+  }
+}
+
+@layer components {
+  .ui-surface {
+    @apply rounded-2xl border border-neutral-700 bg-neutral-800 shadow-lg;
+  }
+
+  .ui-surface-subtle {
+    @apply rounded-xl border border-neutral-700 bg-neutral-900;
+  }
+
+  .ui-surface-raised {
+    @apply rounded-2xl border border-neutral-600 bg-neutral-800 shadow-xl;
+  }
+
+  .ui-modal-backdrop {
+    @apply absolute inset-0 bg-black/55 backdrop-blur-sm;
+  }
+
+  .ui-modal-shell {
+    @apply relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden;
+    @apply rounded-2xl border border-neutral-600 bg-neutral-800 shadow-xl;
+  }
+
+  .ui-modal-header {
+    @apply flex items-center justify-between border-b border-neutral-700 p-4;
+  }
+
+  .ui-modal-body {
+    @apply min-h-0 flex-1 overflow-y-auto p-4;
+  }
+
+  .ui-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2;
+    @apply text-sm font-medium transition;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-0;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ui-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2;
+    @apply text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-0;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply bg-blue-600 text-white hover:bg-blue-500 focus:ring-blue-500/35;
+  }
+
+  .ui-btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2;
+    @apply text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-0;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply border border-neutral-700 bg-neutral-700 text-neutral-100 hover:bg-neutral-600 focus:ring-neutral-500/35;
+  }
+
+  .ui-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2;
+    @apply text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-0;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 focus:ring-neutral-500/35;
+  }
+
+  .ui-btn-success {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2;
+    @apply text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-0;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply border border-emerald-600/70 bg-emerald-600/20 text-emerald-200 hover:bg-emerald-600/30 focus:ring-emerald-500/35;
+  }
+
+  .ui-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2;
+    @apply text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-0;
+    @apply disabled:cursor-not-allowed disabled:opacity-50;
+    @apply border border-red-600/70 bg-red-600/20 text-red-200 hover:bg-red-600/30 focus:ring-red-500/35;
+  }
+
+  .ui-pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-neutral-700 px-3 py-1.5;
+    @apply text-sm text-neutral-200 transition;
+  }
+
+  .ui-pill-active {
+    @apply bg-neutral-700 text-white;
+  }
+
+  .ui-pill-inactive {
+    @apply bg-neutral-900 hover:bg-neutral-800;
+  }
+
+  .ui-chip {
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs;
+  }
+
+  .ui-chip-blue {
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs;
+    @apply border-blue-500/35 bg-blue-500/15 text-blue-100;
+  }
+
+  .ui-chip-green {
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs;
+    @apply border-emerald-500/35 bg-emerald-500/15 text-emerald-100;
+  }
+
+  .ui-chip-yellow {
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs;
+    @apply border-amber-500/35 bg-amber-500/15 text-amber-100;
+  }
+
+  .ui-chip-red {
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs;
+    @apply border-red-500/35 bg-red-500/15 text-red-100;
+  }
+
+  .ui-chip-muted {
+    @apply inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs;
+    @apply border-neutral-700 bg-neutral-800 text-neutral-300;
+  }
+
+  .ui-segmented {
+    @apply inline-flex flex-wrap items-center gap-2;
+  }
+
+  .ui-segment {
+    @apply ui-pill;
+  }
+
+  .ui-field-label {
+    @apply mb-1 block text-sm font-medium text-neutral-100;
+  }
+
+  .ui-field-hint {
+    @apply text-xs text-neutral-400;
+  }
+}
+
 #root {
   min-height: 100vh;
 }

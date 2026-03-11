@@ -21,15 +21,15 @@ export default function Toast({ toasts, onClose }) {
       {toasts.map((toast) => {
         const tone =
           toast.type === "success"
-            ? "border-green-700 bg-green-900 text-green-200"
+            ? "border-emerald-600/70 bg-emerald-600/20 text-emerald-100"
             : toast.type === "error"
-            ? "border-red-700 bg-red-900 text-red-200"
-            : "border-neutral-700 bg-neutral-800 text-gray-200";
+            ? "border-red-600/70 bg-red-600/20 text-red-100"
+            : "border-blue-600/60 bg-blue-600/15 text-blue-100";
 
         return (
           <div
             key={toast.id}
-            className={`border rounded-2xl shadow p-3 flex items-start gap-3 ${tone}`}
+            className={`rounded-2xl shadow-lg p-3 flex items-start gap-3 border ${tone}`}
             role="status"
           >
             <div className="flex-1">
@@ -39,12 +39,12 @@ export default function Toast({ toasts, onClose }) {
 
             <button
               type="button"
-              className="text-sm underline opacity-80 hover:opacity-100"
+              className="text-xs opacity-80 hover:opacity-100"
               onClick={() => onClose(toast.id)}
               aria-label="Close toast"
               title="Close"
             >
-              Close
+              Dismiss
             </button>
           </div>
         );

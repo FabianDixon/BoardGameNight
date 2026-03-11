@@ -62,7 +62,7 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
     >
       {/* Only allow backdrop click if dismissible */}
       <div
-        className="absolute inset-0 bg-black/40"
+        className="ui-modal-backdrop"
         onClick={dismissible ? onClose : undefined}
         aria-hidden="true"
         style={{
@@ -70,13 +70,13 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
         }}
       />
 
-      <div className="relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-800 shadow-xl">
-        <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+      <div className="ui-modal-shell">
+        <div className="ui-modal-header">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
 
           {dismissible && (
             <button
-              className="px-3 py-1 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
+              className="ui-btn-secondary px-3 py-1"
               onClick={onClose}
             >
               Close
@@ -84,7 +84,7 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+        <div className="ui-modal-body">{children}</div>
       </div>
     </div>
   );
@@ -2144,7 +2144,7 @@ export default function App() {
     !isEditGameOpen;
 
   return (
-    <div className="min-h-screen bg-neutral-900 p-6">
+    <div className="min-h-screen bg-neutral-950 p-6 text-neutral-100">
       <div className="sticky top-0 z-40 -mx-6 px-6 pt-4 pb-3 bg-neutral-900/95 backdrop-blur border-b border-neutral-800">
         <div className="flex items-center justify-between">
           <div>
@@ -2159,7 +2159,7 @@ export default function App() {
         </div>
 
         {!showAuthPrompt && (
-          <div className="mt-3 flex gap-2 flex-wrap">
+          <div className="ui-segmented mt-3">
             {[
               { key: APP_TAB.LIBRARY, label: "📚 Library" },
               { key: APP_TAB.COLLECTION, label: "🧺 My Collection" },
@@ -2170,9 +2170,9 @@ export default function App() {
               return (
                 <button
                   key={t.key}
-                  className={`px-3 py-2 rounded-full border transition ${isActive
-                      ? "bg-neutral-800 border-neutral-700 shadow-sm"
-                      : "bg-neutral-900 border-neutral-700 hover:bg-neutral-800"
+                  className={`ui-segment ${isActive
+                      ? "ui-pill-active"
+                      : "ui-pill-inactive"
                     }`}
                   onClick={() => {
                     setActiveTab(t.key);
@@ -2203,7 +2203,7 @@ export default function App() {
 
         <div className="flex flex-col gap-2">
           <button
-            className="bg-blue-600 text-white px-4 py-2 rounded"
+            className="ui-btn-primary"
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "guest");
               setShowAuthPrompt(false);
@@ -2214,7 +2214,7 @@ export default function App() {
           </button>
 
           <button
-            className="border border-neutral-700 px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-white"
+            className="ui-btn-secondary"
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "signin");
               setShowAuthPrompt(false);
@@ -2245,7 +2245,7 @@ export default function App() {
       >
         <form onSubmit={saveEditedGame} className="space-y-3">
           <input
-            className="border p-2 w-full rounded"
+            className="w-full"
             placeholder="Title"
             value={editGameForm.title}
             onChange={(e) => setEditGameForm({ ...editGameForm, title: e.target.value })}
@@ -2253,7 +2253,7 @@ export default function App() {
           />
 
           <input
-            className="border p-2 w-full rounded"
+            className="w-full"
             placeholder="Image URL"
             value={editGameForm.imageUrl}
             onChange={(e) => setEditGameForm({ ...editGameForm, imageUrl: e.target.value })}
@@ -2271,7 +2271,7 @@ export default function App() {
           )}
 
           <textarea
-            className="border p-2 w-full rounded"
+            className="w-full"
             placeholder="Description"
             value={editGameForm.description}
             onChange={(e) => setEditGameForm({ ...editGameForm, description: e.target.value })}
@@ -2287,7 +2287,7 @@ export default function App() {
           <div className="flex items-center justify-between gap-3 pt-2">
           <button
             type="button"
-            className="border border-red-300 bg-red-50 text-red-700 px-4 py-2 rounded hover:bg-red-100 disabled:opacity-50"
+            className="ui-btn-danger"
             onClick={() => deleteGame(editGameForm.id)}
             disabled={!editGameForm.id || isDeletingGame}
             title="Delete game"
@@ -2296,7 +2296,7 @@ export default function App() {
           </button>
 
           <button
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+            className="ui-btn-primary"
             disabled={isDeletingGame}
           >
             Save changes
@@ -2435,7 +2435,7 @@ export default function App() {
                     onSetMyGameSharedInGroup={setMyGameSharedInGroup}
                   />
                 ) : (
-                  <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+                  <div className="ui-surface p-4">
                     <p className="text-sm text-gray-300 mb-3">
                       No group selected. Please pick a group to continue.
                     </p>
@@ -2471,7 +2471,7 @@ export default function App() {
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 min-w-[200px] border rounded-xl px-4 py-2 text-sm md:max-w-md"
+                className="flex-1 min-w-[200px] md:max-w-md"
               />
               <GameTagFilter
                 availableTags={getUniqueTagsFromGames(
@@ -2487,7 +2487,7 @@ export default function App() {
                 {selectedTagFilters.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1 text-xs text-blue-100"
+                    className="ui-chip-blue"
                   >
                     ✓ {tag}
                     <button

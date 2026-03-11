@@ -40,10 +40,10 @@ export default function Fab({
         ...style,
       }}
       className={[
-        "shadow-lg flex items-center justify-center transition select-none",
+        "shadow-xl border flex items-center justify-center transition select-none",
         disabled
-          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-          : "bg-blue-600 text-white hover:bg-blue-500 active:scale-95",
+          ? "bg-neutral-800 border-neutral-700 text-neutral-500 cursor-not-allowed"
+          : "bg-blue-600 border-blue-500 text-white hover:bg-blue-500 active:scale-95",
         isPill ? "text-sm font-semibold border" : "text-3xl",
         className,
       ].join(" ")}

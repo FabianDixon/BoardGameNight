@@ -4,9 +4,9 @@ export function Card({ children, interactive, noPadding, ...props }) {
     <div
       {...props}
       className={[
-        "bg-neutral-900 rounded-2xl shadow",
+        "ui-surface",
         "overflow-hidden flex flex-col min-w-0", // <-- crucial containment
-        interactive && "cursor-pointer hover:bg-neutral-800",
+        interactive && "cursor-pointer hover:bg-neutral-700/80 transition-colors",
         !noPadding && "p-4",
       ]
         .filter(Boolean)

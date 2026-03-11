@@ -20,22 +20,22 @@ export default function GroupsPanel({
   }, [myGroups]);
 
   return (
-    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+    <div className="ui-surface p-4">
       <h2 className="text-xl font-semibold mb-3 text-white">Groups</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900">
+        <div className="ui-surface-subtle p-3">
           <div className="text-sm font-semibold mb-2 text-white">Create group</div>
           <div className="flex gap-2">
             <input
-              className="border border-neutral-700 p-2 rounded w-full bg-neutral-900 text-white placeholder-gray-400"
+              className="w-full"
               placeholder="Group name"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               disabled={!user}
             />
             <button
-              className="bg-blue-600 text-white px-3 py-2 rounded"
+              className="ui-btn-primary px-3"
               disabled={!user || !groupName.trim()}
               onClick={async () => {
                 const id = await onCreateGroup(groupName.trim());
@@ -52,18 +52,18 @@ export default function GroupsPanel({
           </div>
         </div>
 
-        <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900">
+        <div className="ui-surface-subtle p-3">
           <div className="text-sm font-semibold mb-2 text-white">Join group</div>
           <div className="flex gap-2">
             <input
-              className="border border-neutral-700 p-2 rounded w-full bg-neutral-900 text-white placeholder-gray-400"
+              className="w-full"
               placeholder="Paste invite code"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
               disabled={!user}
             />
             <button
-              className="bg-blue-600 text-white px-3 py-2 rounded"
+              className="ui-btn-primary px-3"
               disabled={!user || !joinCode.trim()}
               onClick={async () => {
                 const id = joinCode.trim();
@@ -94,8 +94,8 @@ export default function GroupsPanel({
               return (
                 <button
                   key={g.id}
-                  className={`text-left border rounded-xl p-3 ${
-                    active ? "border-neutral-600 bg-neutral-700 hover:bg-neutral-600" : "border-neutral-700 bg-neutral-800 hover:bg-neutral-700"
+                  className={`text-left rounded-xl p-3 border transition ${
+                    active ? "border-blue-500/40 bg-blue-600/15" : "border-neutral-700 bg-neutral-900 hover:bg-neutral-800"
                   }`}
                   onClick={() => {
                     setCurrentGroupId(g.id);

@@ -43,7 +43,7 @@ export default function GroupDetail({
 
   return (
     <div className="space-y-4">
-      <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+      <div className="ui-surface p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <button
@@ -91,8 +91,8 @@ export default function GroupDetail({
 
         <div className="mt-4 flex gap-2 flex-wrap">
           <button
-            className={`px-3 py-2 rounded-full border border-neutral-700 text-white ${
-              groupTab === GROUP_TAB.COLLECTION ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
+            className={`ui-segment ${
+              groupTab === GROUP_TAB.COLLECTION ? "ui-pill-active" : "ui-pill-inactive"
             }`}
             onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
             type="button"
@@ -100,8 +100,8 @@ export default function GroupDetail({
             Collection
           </button>
           <button
-            className={`px-3 py-2 rounded-full border border-neutral-700 text-white ${
-              groupTab === GROUP_TAB.VOTING ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
+            className={`ui-segment ${
+              groupTab === GROUP_TAB.VOTING ? "ui-pill-active" : "ui-pill-inactive"
             }`}
             onClick={() => setGroupTab(GROUP_TAB.VOTING)}
             type="button"
@@ -110,8 +110,8 @@ export default function GroupDetail({
           </button>
           {settingsNode && (
             <button
-              className={`px-3 py-2 rounded-full border border-neutral-700 text-white ${
-                groupTab === GROUP_TAB.SETTINGS ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
+              className={`ui-segment ${
+                groupTab === GROUP_TAB.SETTINGS ? "ui-pill-active" : "ui-pill-inactive"
               }`}
               onClick={() => setGroupTab(GROUP_TAB.SETTINGS)}
               type="button"
@@ -123,7 +123,7 @@ export default function GroupDetail({
       </div>
 
       {groupTab === GROUP_TAB.COLLECTION && (
-        <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+        <div className="ui-surface p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xl font-semibold text-white">Group collection</h3>
 
@@ -131,7 +131,7 @@ export default function GroupDetail({
               {groupId && myCollectionGames && onSetMyGameSharedInGroup && (
                 <button
                   type="button"
-                  className="px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white bg-neutral-700 hover:bg-neutral-600"
+                  className="ui-pill ui-pill-active"
                   onClick={() => setGroupTab(GROUP_TAB.MANAGE)}
                   title="Choose which games from your library are shared with this group"
                 >
@@ -148,8 +148,8 @@ export default function GroupDetail({
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white ${
-                poolFilter === POOL_FILTER.ALL ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
+              className={`ui-pill ${
+                poolFilter === POOL_FILTER.ALL ? "ui-pill-active" : "ui-pill-inactive"
               }`}
               onClick={() => setPoolFilter(POOL_FILTER.ALL)}
               title="Show all games"
@@ -159,8 +159,8 @@ export default function GroupDetail({
 
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white ${
-                poolFilter === POOL_FILTER.IN_POOL ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
+              className={`ui-pill ${
+                poolFilter === POOL_FILTER.IN_POOL ? "ui-pill-active" : "ui-pill-inactive"
               }`}
               onClick={() => setPoolFilter(POOL_FILTER.IN_POOL)}
               title="Show games that are already in the pool"
@@ -170,8 +170,8 @@ export default function GroupDetail({
 
             <button
               type="button"
-              className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white ${
-                poolFilter === POOL_FILTER.OUT_OF_POOL ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
+              className={`ui-pill ${
+                poolFilter === POOL_FILTER.OUT_OF_POOL ? "ui-pill-active" : "ui-pill-inactive"
               }`}
               onClick={() => setPoolFilter(POOL_FILTER.OUT_OF_POOL)}
               title="Show games that are not in the pool"
@@ -233,7 +233,7 @@ export default function GroupDetail({
       )}
 
       {groupTab === GROUP_TAB.MANAGE && (
-        <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+        <div className="ui-surface p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <h3 className="text-xl font-semibold text-white">Manage my games</h3>
@@ -244,7 +244,7 @@ export default function GroupDetail({
 
             <button
               type="button"
-              className="px-3 py-1.5 rounded-full border border-neutral-700 text-sm text-white bg-neutral-700 hover:bg-neutral-600"
+              className="ui-pill ui-pill-active"
               onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
               disabled={!!manageBusyId}
             >
@@ -254,7 +254,7 @@ export default function GroupDetail({
 
           <div className="flex items-center gap-2 mb-3">
             <input
-              className="w-full px-3 py-2 border border-neutral-700 rounded-xl bg-neutral-900 text-white placeholder-gray-400"
+              className="w-full"
               placeholder="Search my library…"
               value={manageQuery}
               onChange={(e) => setManageQuery(e.target.value)}
@@ -282,8 +282,8 @@ export default function GroupDetail({
 
                       <button
                         type="button"
-                        className={`px-3 py-1.5 rounded-full border border-neutral-700 text-sm whitespace-nowrap text-white ${
-                          shared ? "bg-neutral-700 hover:bg-neutral-600" : "bg-neutral-900 hover:bg-neutral-800"
+                        className={`ui-pill whitespace-nowrap ${
+                          shared ? "ui-pill-active" : "ui-pill-inactive"
                         }`}
                         disabled={busy}
                         onClick={async () => {

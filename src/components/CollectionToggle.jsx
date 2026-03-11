@@ -13,11 +13,11 @@ export default function CollectionToggle({
   };
 
   return inCollection ? (
-    <button className="mt-2 text-sm text-red-600" onClick={handler(onRemove)}>
+    <button className="mt-2 ui-btn-danger" onClick={handler(onRemove)}>
       Remove from my collection
     </button>
   ) : (
-    <button className="mt-2 text-sm text-green-600" onClick={handler(onAdd)}>
+    <button className="mt-2 ui-btn-success" onClick={handler(onAdd)}>
       Add to my collection
     </button>
   );
