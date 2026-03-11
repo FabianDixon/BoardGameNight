@@ -23,7 +23,7 @@ export default function GameTagFilter({ availableTags = [], selectedTags = [], o
     <div className="relative">
       <button
         type="button"
-        className="ui-pill ui-pill-inactive"
+        className="ui-btn-ghost px-3"
         onClick={() => setIsOpen(!isOpen)}
       >
         🏷️ Tags {selectedTags.length > 0 && `(${selectedTags.length})`}
@@ -36,7 +36,7 @@ export default function GameTagFilter({ availableTags = [], selectedTags = [], o
             onClick={() => setIsOpen(false)}
             aria-hidden="true"
           />
-          <div className="absolute top-full left-0 mt-1 ui-surface p-3 z-50 min-w-[250px]">
+          <div className="absolute top-full left-0 mt-2 ui-surface p-3 z-50 min-w-[250px] shadow-xl">
             <div className="space-y-2 max-h-[40vh] overflow-y-auto">
               {availableTags.length === 0 ? (
                 <p className="text-sm text-gray-400">No tags available.</p>

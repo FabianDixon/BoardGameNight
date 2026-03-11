@@ -1,5 +1,4 @@
 // src/components/GameDetail.jsx
-import CollectionToggle from "./CollectionToggle";
 import StarRating from "./StarRating";
 import { getGameTagLabel, normalizeGameTags } from "../utils/gameTags";
 
@@ -27,101 +26,124 @@ export default function GameDetail({
   const tags = normalizeGameTags(game?.tags);
 
   return (
-    <div className="ui-surface p-6 max-w-xl">
-      <div className="flex items-center justify-between mb-4">
-        <button className="text-sm text-blue-400 hover:underline" onClick={onBack}>
+    <div className="mx-auto mt-4 md:mt-5 w-full max-w-4xl space-y-5">
+      <div className="flex items-center justify-between">
+        <button className="ui-btn-ghost px-3 py-1.5 text-xs" onClick={onBack}>
           ← Back
         </button>
 
         {canEdit && (
           <button
-            className="ui-btn-secondary px-3 py-1"
+            className="ui-btn-secondary px-3 py-1.5 text-xs"
             onClick={onEdit}
             title="Edit game"
             aria-label="Edit game"
           >
-            ✏️
+            Edit
           </button>
         )}
       </div>
 
-      {game.imageUrl && (
-      <div className="w-full flex justify-center bg-neutral-900 rounded-2xl overflow-hidden mb-4">
-        <img
-          src={game.imageUrl}
-          alt={game.title}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          className="block object-contain"
-          style={{
-            maxHeight: "70vh",     // never taller than viewport
-            maxWidth: "100%",      // never wider than container
-            width: "auto",         // ❗ do not stretch
-            height: "auto",        // ❗ do not stretch
-          }}
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
-      </div>
-    )}
+      <div className="ui-surface overflow-hidden p-0">
+        <div className="relative flex min-h-[38vh] max-h-[72vh] items-center justify-center border-b border-neutral-700 bg-neutral-900">
+          {game.imageUrl ? (
+            <img
+              src={game.imageUrl}
+              alt={game.title}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              className="block object-contain"
+              style={{
+                maxHeight: "70vh",
+                maxWidth: "100%",
+                width: "auto",
+                height: "auto",
+              }}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          ) : (
+            <span className="text-xs uppercase tracking-wide text-neutral-500">No cover available</span>
+          )}
 
-      <h2 className="text-2xl font-bold text-white">{game.title}</h2>
-      <p className="mt-2 text-gray-300">{game.description}</p>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/45 to-transparent" />
+        </div>
 
-      <div className="mt-4">
-        <div className="text-sm font-medium text-gray-200 mb-2">Tags</div>
-        {tags.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <span
-                key={tag}
-                className="ui-chip-muted text-sm"
-              >
-                {getGameTagLabel(tag)}
-              </span>
-            ))}
+        <div className="space-y-4 p-5 md:p-6">
+          <div className="space-y-3">
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">{game.title}</h2>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="ui-chip-yellow">⭐ Avg {averageRating(game)}</span>
+              <span className="ui-chip-muted">Your rating: {myRating ?? "—"}</span>
+              {inCollection ? <span className="ui-chip-green">In your collection</span> : null}
+            </div>
           </div>
-        ) : (
-          <p className="text-sm text-gray-400">No tags yet.</p>
-        )}
-      </div>
 
-      <div className="mt-4">
-        <p className="text-yellow-400 text-sm mb-1">
-          Average rating: {averageRating(game)}
-        </p>
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold tracking-widest uppercase text-neutral-400">About</h3>
+            <p className="text-sm md:text-base leading-relaxed text-neutral-200">
+              {game.description || "No description added yet."}
+            </p>
+          </div>
 
-        <p className="text-sm text-gray-300 mb-2">
-          Your rating:{" "}
-          <span className="font-semibold">{myRating ?? "—"}</span>
-        </p>
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold tracking-widest uppercase text-neutral-400">Tags</h3>
+            {tags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="ui-chip-muted"
+                  >
+                    {getGameTagLabel(tag)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-neutral-400">No tags yet.</p>
+            )}
+          </div>
 
-        <StarRating value={myRating || 0} onChange={(v) => onRate(v)} readOnly={false} />
-      </div>
+          <div className="space-y-3 pt-1">
+            <div className="space-y-2">
+              <p className="text-sm text-neutral-300">Rate this game</p>
+              <StarRating value={myRating || 0} onChange={(v) => onRate(v)} readOnly={false} />
+            </div>
 
-      <div className="mt-6">
-        <CollectionToggle inCollection={inCollection} onAdd={onAdd} onRemove={onRemove} />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-700/70 pt-3">
+              <p className="text-sm text-neutral-300"></p>
+              <button
+                type="button"
+                className={inCollection ? "ui-btn-danger px-3 py-1.5 text-xs" : "ui-btn-success px-3 py-1.5 text-xs"}
+                onClick={inCollection ? onRemove : onAdd}
+              >
+                {inCollection ? "Remove from my collection" : "Add to my collection"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {groupId && (
-        <div className="mt-4 p-3 rounded-xl border border-neutral-700 bg-neutral-900">
-          <div className="text-sm font-semibold mb-2 text-white">This group</div>
+        <div className="ui-surface-subtle p-4">
+          <div className="text-xs font-semibold tracking-widest uppercase text-neutral-400 mb-2">Group relevance</div>
 
           {!inCollection ? (
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-neutral-300">
               Add this game to your collection to be able to share it with this group.
             </p>
           ) : (
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm text-gray-300">
+                <div className="text-sm text-neutral-300">
                   Shared by you:{" "}
                   <span className="font-semibold">
                     {sharedInGroup == null ? "…" : sharedInGroup ? "Yes" : "No"}
                   </span>
                 </div>
-                <div className="text-xs text-gray-400">
+                <div className="text-xs text-neutral-400">
                   Controls whether this game appears in the group collection because of you.
                 </div>
               </div>

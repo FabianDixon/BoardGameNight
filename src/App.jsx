@@ -2460,7 +2460,20 @@ export default function App() {
       !showGameDetail && (
         <>
           {/* Search & Tag Filter */}
-          <div className="mb-4 space-y-3">
+          <div className="mt-4 mb-5 ui-surface-subtle p-3 md:p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="text-lg md:text-xl font-semibold text-white">
+                  {activeTab === "library" ? "Library" : "My Collection"}
+                </h2>
+                <p className="text-sm text-neutral-400">
+                  {activeTab === "library"
+                    ? "Browse and discover games"
+                    : "Your personal shelf of games"}
+                </p>
+              </div>
+            </div>
+
             <div className="flex gap-2 flex-wrap items-center">
               <input
                 type="text"
@@ -2471,7 +2484,7 @@ export default function App() {
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 min-w-[200px] md:max-w-md"
+                className="flex-1 min-w-[220px] md:max-w-xl px-5 py-2.5"
               />
               <GameTagFilter
                 availableTags={getUniqueTagsFromGames(
@@ -2483,7 +2496,7 @@ export default function App() {
             </div>
 
             {selectedTagFilters.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pt-1">
                 {selectedTagFilters.map((tag) => (
                   <span
                     key={tag}
@@ -2506,7 +2519,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
             {(activeTab === "collection" ? collectionGames : libraryGames).map(
               (game) => (
                 <GameCard
@@ -2516,6 +2529,7 @@ export default function App() {
                   onOpen={() => setSelectedGame(game)}
                   onAdd={() => addToCollection(game.id)}
                   onRemove={() => removeFromCollection(game.id)}
+                  view={activeTab}
                 />
               )
             )}

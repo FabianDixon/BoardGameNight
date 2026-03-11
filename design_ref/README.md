@@ -1,0 +1,1 @@
+ui_mockup_reference.png → use as visual inspiration for dark-first shell, bottom navigation, image-led cards, and premium spacing
