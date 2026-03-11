@@ -44,6 +44,9 @@ import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
 import { buildSessionMailto, copyJsonToClipboard } from "./utils/emailExport";
+import GameTagsField from "./components/GameTagsField";
+import GameTagFilter from "./components/GameTagFilter";
+import { normalizeGameTags, getUniqueTagsFromGames } from "./utils/gameTags";
 import { VOTE_STATUS, APP_TAB, GROUP_VIEW, GROUP_TAB } from "./constants/workflow";
 
 const auth = getAuth();
@@ -67,7 +70,7 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
         }}
       />
 
-      <div className="relative w-full max-w-xl bg-neutral-800 rounded-2xl shadow-xl border border-neutral-700">
+      <div className="relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-800 shadow-xl">
         <div className="flex items-center justify-between p-4 border-b border-neutral-700">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
 
@@ -81,7 +84,7 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
           )}
         </div>
 
-        <div className="p-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
       </div>
     </div>
   );
@@ -162,6 +165,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(APP_TAB.LIBRARY); // library | collection | group | profile
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTagFilters, setSelectedTagFilters] = useState([]);
 
   const [myGroups, setMyGroups] = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState("");
@@ -207,6 +211,7 @@ export default function App() {
     title: "",
     description: "",
     imageUrl: "",
+    tags: [],
   });
 
   const myRatings = useMyRatings(user);
@@ -219,6 +224,7 @@ export default function App() {
     title: "",
     description: "",
     imageUrl: "",
+    tags: [],
   });
 
   const [isDeletingGame, setIsDeletingGame] = useState(false);
@@ -431,20 +437,36 @@ export default function App() {
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
+  // Helper: check if a game matches the search query (title + tags, not description)
+  function matchesSearchQuery(game, query) {
+    if (!query) return true;
+    if (game.title?.toLowerCase().includes(query)) return true;
+    const tags = normalizeGameTags(game.tags);
+    for (const tag of tags) {
+      if (tag.includes(query)) return true;
+    }
+    return false;
+  }
+
+  // Helper: check if a game matches ALL selected tags (ALL-match semantics)
+  function matchesAnyTag(game) {
+    if (selectedTagFilters.length === 0) return true;
+    const tags = normalizeGameTags(game.tags);
+    return selectedTagFilters.every((selectedTag) => tags.includes(selectedTag));
+  }
+
   const libraryGames = useMemo(() => {
-    if (!normalizedQuery) return games;
     return games.filter((g) =>
-      g.title?.toLowerCase().includes(normalizedQuery)
+      matchesSearchQuery(g, normalizedQuery) && matchesAnyTag(g)
     );
-  }, [games, normalizedQuery]);
+  }, [games, normalizedQuery, selectedTagFilters]);
 
   const collectionGames = useMemo(() => {
     const base = games.filter((g) => myCollection.has(g.id));
-    if (!normalizedQuery) return base;
     return base.filter((g) =>
-      g.title?.toLowerCase().includes(normalizedQuery)
+      matchesSearchQuery(g, normalizedQuery) && matchesAnyTag(g)
     );
-  }, [games, myCollection, normalizedQuery]);
+  }, [games, myCollection, normalizedQuery, selectedTagFilters]);
 
   const groupGames = useMemo(() => {
     if (!currentGroupId) return [];
@@ -748,6 +770,7 @@ export default function App() {
       title: game.title || "",
       description: game.description || "",
       imageUrl: game.imageUrl || "",
+      tags: normalizeGameTags(game.tags),
     });
     setIsEditGameOpen(true);
   }
@@ -891,6 +914,8 @@ export default function App() {
   async function addGame(e) {
     e.preventDefault();
 
+    const tags = normalizeGameTags(addGameForm.tags);
+
     if (!isValidImageUrl(addGameForm.imageUrl)) {
       showToast("Image URL must end with .jpg, .png, .webp, or .gif", "error");
       return;
@@ -902,14 +927,17 @@ export default function App() {
     }
 
     await addDoc(collection(db, "games"), {
-      ...addGameForm,
+      title: addGameForm.title.trim(),
+      description: addGameForm.description.trim(),
+      imageUrl: addGameForm.imageUrl.trim(),
+      tags,
       createdBy: user.uid,
       ratingTotal: 0,
       ratingCount: 0,
       createdAt: Date.now(),
     });
 
-    setAddGameForm({ title: "", description: "", imageUrl: "" });
+    setAddGameForm({ title: "", description: "", imageUrl: "", tags: [] });
     setIsAddGameOpen(false);
   }
 
@@ -1059,11 +1087,14 @@ export default function App() {
     e.preventDefault();
     if (!user || !editGameForm.id) return;
 
+    const tags = normalizeGameTags(editGameForm.tags);
+
     try {
       await updateDoc(doc(db, "games", editGameForm.id), {
         title: editGameForm.title.trim(),
         description: editGameForm.description.trim(),
         imageUrl: editGameForm.imageUrl.trim(),
+        tags,
         updatedAt: Date.now(),
       });
       showToast("Game updated ✅", "success");
@@ -2228,11 +2259,13 @@ export default function App() {
 
           {/* image preview */}
           {editGameForm.imageUrl.trim() && (
-            <img
-              src={editGameForm.imageUrl.trim()}
-              alt="preview"
-              className="rounded-xl border"
-            />
+            <div className="overflow-hidden rounded-xl border bg-neutral-900">
+              <img
+                src={editGameForm.imageUrl.trim()}
+                alt="preview"
+                className="block max-h-[32vh] w-full object-contain"
+              />
+            </div>
           )}
 
           <textarea
@@ -2242,6 +2275,11 @@ export default function App() {
             onChange={(e) => setEditGameForm({ ...editGameForm, description: e.target.value })}
             required
             rows={4}
+          />
+
+          <GameTagsField
+            value={editGameForm.tags}
+            onChange={(tags) => setEditGameForm({ ...editGameForm, tags })}
           />
 
           <div className="flex items-center justify-between gap-3 pt-2">
@@ -2419,19 +2457,51 @@ export default function App() {
       (activeTab === "library" || activeTab === "collection") &&
       !showGameDetail && (
         <>
-          {/* Search */}
-          <div className="mb-4">
-            <input
-              type="text"
-              placeholder={
-                activeTab === "library"
-                  ? "Search library games…"
-                  : "Search your collection…"
-              }
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full md:max-w-md border rounded-xl px-4 py-2 text-sm"
-            />
+          {/* Search & Tag Filter */}
+          <div className="mb-4 space-y-3">
+            <div className="flex gap-2 flex-wrap items-center">
+              <input
+                type="text"
+                placeholder={
+                  activeTab === "library"
+                    ? "Search library games…"
+                    : "Search your collection…"
+                }
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 min-w-[200px] border rounded-xl px-4 py-2 text-sm md:max-w-md"
+              />
+              <GameTagFilter
+                availableTags={getUniqueTagsFromGames(
+                  activeTab === "collection" ? collectionGames : libraryGames
+                )}
+                selectedTags={selectedTagFilters}
+                onTagsChange={setSelectedTagFilters}
+              />
+            </div>
+
+            {selectedTagFilters.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedTagFilters.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1 text-xs text-blue-100"
+                  >
+                    ✓ {tag}
+                    <button
+                      type="button"
+                      className="text-blue-200 hover:text-white ml-1"
+                      onClick={() =>
+                        setSelectedTagFilters(selectedTagFilters.filter((t) => t !== tag))
+                      }
+                      aria-label={`Remove ${tag} filter`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

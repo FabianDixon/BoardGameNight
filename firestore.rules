@@ -61,16 +61,22 @@ match /games/{gameId} {
     ])
     && request.resource.data.createdBy == request.auth.uid
     && request.resource.data.ratingTotal is number
-    && request.resource.data.ratingCount is number;
+    && request.resource.data.ratingCount is number
+    && (
+      !('tags' in request.resource.data) || request.resource.data.tags is list
+    );
 
   allow update: if signedIn() && (
     (
       request.resource.data.diff(resource.data).changedKeys()
-        .hasOnly(['title', 'description', 'imageUrl', 'updatedAt'])
+        .hasOnly(['title', 'description', 'imageUrl', 'tags', 'updatedAt'])
       && request.resource.data.title is string
       && request.resource.data.description is string
       && (
         !('imageUrl' in request.resource.data) || request.resource.data.imageUrl is string
+      )
+      && (
+        !('tags' in request.resource.data) || request.resource.data.tags is list
       )
       && (
         !('updatedAt' in request.resource.data) || request.resource.data.updatedAt is number

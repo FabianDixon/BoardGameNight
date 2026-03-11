@@ -1,5 +1,6 @@
 // src/components/AddGameForm.jsx
 import React from "react";
+import GameTagsField from "./GameTagsField";
 
 export default function AddGameForm({ form, setForm, onSubmit }) {
   return (
@@ -27,6 +28,11 @@ export default function AddGameForm({ form, setForm, onSubmit }) {
         value={form.description}
         onChange={(e) => setForm({ ...form, description: e.target.value })}
         required
+      />
+
+      <GameTagsField
+        value={form.tags}
+        onChange={(tags) => setForm({ ...form, tags })}
       />
 
       <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">

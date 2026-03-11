@@ -1,6 +1,7 @@
 // src/components/GameDetail.jsx
 import CollectionToggle from "./CollectionToggle";
 import StarRating from "./StarRating";
+import { getGameTagLabel, normalizeGameTags } from "../utils/gameTags";
 
 function averageRating(game) {
   if (!game?.ratingCount) return "–";
@@ -23,6 +24,8 @@ export default function GameDetail({
   onToggleShareInGroup,
   shareBusy,
 }) {
+  const tags = normalizeGameTags(game?.tags);
+
   return (
     <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-6 max-w-xl">
       <div className="flex items-center justify-between mb-4">
@@ -65,6 +68,24 @@ export default function GameDetail({
 
       <h2 className="text-2xl font-bold text-white">{game.title}</h2>
       <p className="mt-2 text-gray-300">{game.description}</p>
+
+      <div className="mt-4">
+        <div className="text-sm font-medium text-gray-200 mb-2">Tags</div>
+        {tags.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center rounded-full border border-neutral-600 bg-neutral-900 px-3 py-1 text-sm text-gray-100"
+              >
+                {getGameTagLabel(tag)}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No tags yet.</p>
+        )}
+      </div>
 
       <div className="mt-4">
         <p className="text-yellow-400 text-sm mb-1">
