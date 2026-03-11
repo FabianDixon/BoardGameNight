@@ -104,6 +104,49 @@ function normalizePlayedGameIds(playedGameIds, winnerGameId) {
   return [winnerId, ...uniqueIds.filter((id) => id !== winnerId)];
 }
 
+const SESSION_RESULT_MODES = new Set([
+  "ranked",
+  "coop-win",
+  "coop-loss",
+  "no-winner",
+]);
+
+function defaultResultMode(winnerGameId) {
+  return winnerGameId ? "ranked" : "no-winner";
+}
+
+function normalizeResultMode(value, fallbackMode) {
+  return SESSION_RESULT_MODES.has(value) ? value : fallbackMode;
+}
+
+function normalizePlacements(placements, resultMode) {
+  const mode = normalizeResultMode(resultMode, "no-winner");
+
+  if (mode === "coop-loss" || mode === "no-winner") {
+    return [];
+  }
+
+  const deduped = new Map();
+
+  for (const entry of Array.isArray(placements) ? placements : []) {
+    const userId = String(entry?.userId || "").trim();
+    if (!userId) continue;
+
+    const placeValue = Number(entry?.place);
+    if (!Number.isFinite(placeValue) || placeValue < 1) continue;
+
+    deduped.set(userId, {
+      userId,
+      place: mode === "coop-win" ? 1 : Math.floor(placeValue),
+    });
+  }
+
+  return [...deduped.values()].sort((a, b) => {
+    if (a.place !== b.place) return a.place - b.place;
+    return a.userId.localeCompare(b.userId);
+  });
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -600,12 +643,18 @@ export default function App() {
         const winnerGameId = typeof data.winnerGameId === "string"
           ? data.winnerGameId
           : (activeVote?.winnerGameId || null);
+        const resultMode = normalizeResultMode(
+          data.resultMode,
+          defaultResultMode(winnerGameId)
+        );
 
         setSessionPlayRecord({
           id: snap.id,
           ...data,
           winnerGameId,
+          resultMode,
           playedGameIds: normalizePlayedGameIds(data.playedGameIds, winnerGameId),
+          placements: normalizePlacements(data.placements, resultMode),
         });
       },
       (err) => {
@@ -634,7 +683,7 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds }) => {
+  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds, resultMode, placements }) => {
     if (!user || !currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) {
       return;
     }
@@ -646,7 +695,12 @@ export default function App() {
 
     const now = Date.now();
     const winnerGameId = activeVote?.winnerGameId || null;
+    const normalizedResultMode = normalizeResultMode(
+      resultMode,
+      defaultResultMode(winnerGameId)
+    );
     const normalizedPlayedGameIds = normalizePlayedGameIds(playedGameIds, winnerGameId);
+    const normalizedPlacements = normalizePlacements(placements, normalizedResultMode);
     const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
 
     const payload = {
@@ -659,6 +713,8 @@ export default function App() {
       playedAt: typeof playedAt === "number" ? playedAt : null,
       winnerGameId,
       playedGameIds: normalizedPlayedGameIds,
+      resultMode: normalizedResultMode,
+      placements: normalizedPlacements,
       createdAt:
         typeof sessionPlayRecord?.createdAt === "number"
           ? sessionPlayRecord.createdAt
@@ -1453,6 +1509,8 @@ export default function App() {
           playedAt: now,
           winnerGameId: winnerGameId || null,
           playedGameIds: normalizePlayedGameIds([], winnerGameId),
+          resultMode: defaultResultMode(winnerGameId),
+          placements: [],
           createdAt: now,
           updatedAt: now,
           createdBy: user.uid,
@@ -2282,6 +2340,7 @@ export default function App() {
                         currentGroupId={currentGroupId}
                         groupSettings={groupSettings}
                         groupGames={groupGames}
+                        members={members}
                         activeVote={activeVote}
                         mySubmissionGameId={mySubmissionGameId}
                         myBallot={myBallot}

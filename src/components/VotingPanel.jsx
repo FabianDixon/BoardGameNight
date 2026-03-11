@@ -118,11 +118,154 @@ function formatPlayedDate(timestamp) {
   return d.toLocaleDateString(undefined, options);
 }
 
+function truncateUserId(userId) {
+  const value = String(userId || "").trim();
+  if (!value) return "Unknown member";
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+const SESSION_RESULT_MODE_OPTIONS = [
+  { value: "ranked", label: "Ranked" },
+  { value: "coop-win", label: "Co-op win" },
+  { value: "coop-loss", label: "Co-op loss" },
+  { value: "no-winner", label: "No winner" },
+];
+
+const SESSION_RESULT_MODE_SET = new Set(
+  SESSION_RESULT_MODE_OPTIONS.map((option) => option.value)
+);
+
+function defaultResultMode(winnerGameId) {
+  return winnerGameId ? "ranked" : "no-winner";
+}
+
+function normalizeResultMode(value, fallbackMode) {
+  return SESSION_RESULT_MODE_SET.has(value) ? value : fallbackMode;
+}
+
+function normalizePlacements(placements, resultMode) {
+  const mode = normalizeResultMode(resultMode, "no-winner");
+
+  if (mode === "coop-loss" || mode === "no-winner") {
+    return [];
+  }
+
+  const deduped = new Map();
+
+  for (const entry of Array.isArray(placements) ? placements : []) {
+    const userId = String(entry?.userId || "").trim();
+    if (!userId) continue;
+
+    const placeValue = Number(entry?.place);
+    if (!Number.isFinite(placeValue) || placeValue < 1) continue;
+
+    deduped.set(userId, {
+      userId,
+      place: mode === "coop-win" ? 1 : Math.floor(placeValue),
+    });
+  }
+
+  return [...deduped.values()].sort((a, b) => {
+    if (a.place !== b.place) return a.place - b.place;
+    return a.userId.localeCompare(b.userId);
+  });
+}
+
+function formatPlaceLabel(place) {
+  const x = Number(place);
+  if (!Number.isFinite(x) || x < 1) return "—";
+  const abs = Math.abs(Math.trunc(x));
+  const mod100 = abs % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${abs}th`;
+  switch (abs % 10) {
+    case 1:
+      return `${abs}st`;
+    case 2:
+      return `${abs}nd`;
+    case 3:
+      return `${abs}rd`;
+    default:
+      return `${abs}th`;
+  }
+}
+
+function memberDisplayName(member, fallbackUserId = "") {
+  const nickname = String(member?.nickname || "").trim();
+  if (nickname) return nickname;
+
+  if (member) {
+    return "Unnamed member";
+  }
+
+  return truncateUserId(fallbackUserId);
+}
+
+function sessionLabelFromIndex(sessionIndex, fallback = "Session") {
+  if (typeof sessionIndex === "number" && Number.isFinite(sessionIndex) && sessionIndex >= 1) {
+    return `Session #${sessionIndex}`;
+  }
+  return fallback;
+}
+
+function resultModeLabel(resultMode) {
+  switch (resultMode) {
+    case "ranked":
+      return "Ranked";
+    case "coop-win":
+      return "Co-op win";
+    case "coop-loss":
+      return "Co-op loss";
+    case "no-winner":
+      return "No winner";
+    default:
+      return "Result";
+  }
+}
+
+function formatPlacementsSummary(resultMode, placements, memberMap) {
+  const normalizedMode = normalizeResultMode(resultMode, "no-winner");
+  const normalizedPlacements = normalizePlacements(placements, normalizedMode);
+
+  if (normalizedMode === "coop-loss") {
+    return "Co-op loss recorded.";
+  }
+
+  if (normalizedMode === "no-winner") {
+    return "No player winner recorded.";
+  }
+
+  if (normalizedMode === "coop-win") {
+    if (normalizedPlacements.length === 0) return "Co-op win recorded.";
+    return `Co-op winners: ${normalizedPlacements
+      .map((entry) => memberDisplayName(memberMap.get(entry.userId), entry.userId))
+      .join(", ")}`;
+  }
+
+  if (normalizedPlacements.length === 0) {
+    return "No player placements recorded.";
+  }
+
+  const grouped = new Map();
+  for (const entry of normalizedPlacements) {
+    const key = entry.place;
+    const names = grouped.get(key) || [];
+    names.push(memberDisplayName(memberMap.get(entry.userId), entry.userId));
+    grouped.set(key, names);
+  }
+
+  return [...grouped.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([place, names]) => `${formatPlaceLabel(place)}: ${names.join(", ")}`)
+    .join(" · ");
+}
+
 function VotingPanelInner({
   user,
   currentGroupId,
   groupSettings,
   groupGames,
+  members,
 
   poolActiveIds,
   submittedGameIds,
@@ -316,6 +459,17 @@ function VotingPanelInner({
     );
   }, [groupGames]);
 
+  const memberMap = useMemo(
+    () => new Map((members || []).map((member) => [member.userId, member])),
+    [members]
+  );
+
+  const memberOptions = useMemo(() => {
+    return [...(members || [])].sort((a, b) =>
+      memberDisplayName(a).localeCompare(memberDisplayName(b))
+    );
+  }, [members]);
+
   const initialHistoryPlayedDate = status === VOTE_STATUS.CLOSED
     ? toDateInputValue(
         typeof sessionPlayRecord?.playedAt === "number"
@@ -333,8 +487,26 @@ function VotingPanelInner({
       )
     : [];
 
+  const initialHistoryResultMode = status === VOTE_STATUS.CLOSED
+    ? normalizeResultMode(
+        sessionPlayRecord?.resultMode,
+        defaultResultMode(winnerGameId)
+      )
+    : defaultResultMode(winnerGameId);
+
+  const initialHistoryPlacements = status === VOTE_STATUS.CLOSED
+    ? normalizePlacements(sessionPlayRecord?.placements, initialHistoryResultMode)
+    : [];
+
   const [historyPlayedDate, setHistoryPlayedDate] = useState(initialHistoryPlayedDate);
   const [historyPlayedGameIds, setHistoryPlayedGameIds] = useState(initialHistoryPlayedGameIds);
+  const [historyResultMode, setHistoryResultMode] = useState(initialHistoryResultMode);
+  const [historyPlacements, setHistoryPlacements] = useState(initialHistoryPlacements);
+
+  const placementChoices = useMemo(() => {
+    const count = Math.max(memberOptions.length, 4);
+    return Array.from({ length: count }, (_, index) => index + 1);
+  }, [memberOptions.length]);
 
   async function handleSubmit() {
     if (submitDisabled) return;
@@ -356,6 +528,8 @@ function VotingPanelInner({
     await onSaveSessionPlay({
       playedAt: fromDateInputValue(historyPlayedDate),
       playedGameIds: normalizePlayedGameIds(historyPlayedGameIds, winnerGameId),
+      resultMode: historyResultMode,
+      placements: normalizePlacements(historyPlacements, historyResultMode),
     });
   }
 
@@ -375,6 +549,50 @@ function VotingPanelInner({
       }
 
       return normalizePlayedGameIds([...existing, id], winnerGameId);
+    });
+  }
+
+  function handleResultModeChange(nextMode) {
+    const normalizedMode = normalizeResultMode(nextMode, defaultResultMode(winnerGameId));
+    setHistoryResultMode(normalizedMode);
+    setHistoryPlacements((prev) => normalizePlacements(prev, normalizedMode));
+  }
+
+  function setRankedPlacement(userId, placeValue) {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+
+    setHistoryPlacements((prev) => {
+      const next = new Map(
+        normalizePlacements(prev, "ranked").map((entry) => [entry.userId, entry])
+      );
+
+      if (placeValue == null) {
+        next.delete(normalizedUserId);
+      } else {
+        next.set(normalizedUserId, { userId: normalizedUserId, place: placeValue });
+      }
+
+      return normalizePlacements([...next.values()], "ranked");
+    });
+  }
+
+  function toggleCoopWinner(userId) {
+    const normalizedUserId = String(userId || "").trim();
+    if (!normalizedUserId) return;
+
+    setHistoryPlacements((prev) => {
+      const next = new Map(
+        normalizePlacements(prev, "coop-win").map((entry) => [entry.userId, entry])
+      );
+
+      if (next.has(normalizedUserId)) {
+        next.delete(normalizedUserId);
+      } else {
+        next.set(normalizedUserId, { userId: normalizedUserId, place: 1 });
+      }
+
+      return normalizePlacements([...next.values()], "coop-win");
     });
   }
 
@@ -666,7 +884,10 @@ function VotingPanelInner({
             <div className="text-sm font-semibold text-white">Session history</div>
 
             <div className="text-xs text-gray-400">
-              Session: <span className="font-mono">{activeVote?.id || "—"}</span>
+              {sessionLabelFromIndex(
+                sessionPlayRecord?.sessionIndex,
+                "Current session"
+              )}
             </div>
 
             <div>
@@ -726,6 +947,133 @@ function VotingPanelInner({
                   </div>
                 </div>
               </div>
+
+              <div>
+                <div className="text-sm font-medium mb-1 text-gray-300">Player results</div>
+                <div className="text-xs text-gray-400 mb-2">
+                  Record player placements or co-op outcomes for this session.
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                  {SESSION_RESULT_MODE_OPTIONS.map((option) => {
+                    const selected = historyResultMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={[
+                          "rounded-lg border px-3 py-2 text-sm transition",
+                          selected
+                            ? "border-blue-500 bg-blue-900 text-blue-100"
+                            : "border-neutral-700 bg-neutral-900 text-gray-300 hover:bg-neutral-800",
+                        ].join(" ")}
+                        onClick={() => handleResultModeChange(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {historyResultMode === "ranked" && (
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-900">
+                    <div className="px-3 py-2 border-b border-neutral-700 text-xs text-gray-400">
+                      Assign the same place to multiple players to record a tie. Leave players unassigned if needed.
+                    </div>
+
+                    {memberOptions.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-gray-400">No group members available.</div>
+                    ) : (
+                      <div className="max-h-72 overflow-y-auto">
+                        {memberOptions.map((member) => {
+                          const selectedPlacement = historyPlacements.find(
+                            (entry) => entry.userId === member.userId
+                          );
+
+                          return (
+                            <div
+                              key={member.userId}
+                              className="flex items-center justify-between gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0"
+                            >
+                              <span className="text-sm text-gray-300 min-w-0 truncate">
+                                {memberDisplayName(member, member.userId)}
+                              </span>
+
+                              <select
+                                className="border border-neutral-700 rounded px-2 py-1.5 text-sm bg-neutral-800 text-white"
+                                value={selectedPlacement?.place || ""}
+                                onChange={(e) => {
+                                  const rawValue = e.target.value;
+                                  setRankedPlacement(
+                                    member.userId,
+                                    rawValue ? Number(rawValue) : null
+                                  );
+                                }}
+                              >
+                                <option value="">Unassigned</option>
+                                {placementChoices.map((place) => (
+                                  <option key={place} value={place}>
+                                    {formatPlaceLabel(place)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {historyResultMode === "coop-win" && (
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-900">
+                    <div className="px-3 py-2 border-b border-neutral-700 text-xs text-gray-400">
+                      Select the players who won together.
+                    </div>
+
+                    {memberOptions.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-gray-400">No group members available.</div>
+                    ) : (
+                      <div className="max-h-72 overflow-y-auto">
+                        {memberOptions.map((member) => {
+                          const checked = historyPlacements.some(
+                            (entry) => entry.userId === member.userId
+                          );
+
+                          return (
+                            <label
+                              key={member.userId}
+                              className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800"
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1 shrink-0"
+                                checked={checked}
+                                onChange={() => toggleCoopWinner(member.userId)}
+                              />
+                              <span className="block flex-1 min-w-0 break-words text-sm leading-5 text-gray-300">
+                                {memberDisplayName(member, member.userId)}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {historyResultMode === "coop-loss" && (
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-gray-300">
+                    This session will be saved as a co-op loss with no winners or placements.
+                  </div>
+                )}
+
+                {historyResultMode === "no-winner" && (
+                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-gray-300">
+                    This session will be saved with no player winner or placements.
+                  </div>
+                )}
+              </div>
             </div>
 
             <button
@@ -748,9 +1096,19 @@ function VotingPanelInner({
           
           <div className="space-y-3">
             {sessionHistory.map((play) => {
-              const winnerTitle = play.winnerGameId
+              const selectedGameTitle = play.winnerGameId
                 ? titleById(gameMap, play.winnerGameId)
-                : "No winner";
+                : "No selected game recorded";
+              const playResultMode = normalizeResultMode(
+                play.resultMode,
+                defaultResultMode(play.winnerGameId)
+              );
+              const playPlacements = normalizePlacements(play.placements, playResultMode);
+              const resultSummary = formatPlacementsSummary(
+                playResultMode,
+                playPlacements,
+                memberMap
+              );
               
               const playedGamesList = Array.isArray(play.playedGameIds)
                 ? play.playedGameIds.filter((id) => id !== play.winnerGameId)
@@ -767,17 +1125,27 @@ function VotingPanelInner({
                     <div className="text-sm text-gray-400">
                       {formatPlayedDate(play.playedAt)}
                     </div>
-                    {play.sessionIndex != null && (
-                      <div className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-gray-400">
-                        Session #{play.sessionIndex}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <div className="text-xs px-2 py-0.5 rounded-full border border-neutral-700 bg-neutral-800 text-gray-300">
+                        {resultModeLabel(playResultMode)}
                       </div>
-                    )}
+                      <div className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-gray-400">
+                        {sessionLabelFromIndex(play.sessionIndex)}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="mb-2">
-                    <div className="text-sm text-gray-400 mb-1">Winner</div>
+                    <div className="text-sm text-gray-400 mb-1">Selected game</div>
                     <div className="font-medium text-white flex items-center gap-2">
-                      🏆 {winnerTitle}
+                      🎲 {selectedGameTitle}
+                    </div>
+                  </div>
+
+                  <div className="mb-2">
+                    <div className="text-sm text-gray-400 mb-1">Result</div>
+                    <div className="text-sm text-gray-300">
+                      {resultSummary}
                     </div>
                   </div>
 
