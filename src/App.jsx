@@ -1571,7 +1571,9 @@ export default function App() {
       );
     } catch (e) {
       console.error("closeVote failed:", e);
-      showToast(e.code || e.message || "Failed to close vote.", "error");
+      if (!opts.auto) {
+        showToast(e.code || e.message || "Failed to close vote.", "error");
+      }
     }
   }, [
     user,
