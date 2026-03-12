@@ -58,7 +58,7 @@ export default function GroupDetail({
   }, [collectionVisibleGames, poolFilter]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pt-2 md:pt-0">
       <div className="ui-surface p-4 md:p-5 space-y-5 md:space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
           <div className="min-w-0">
