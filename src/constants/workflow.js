@@ -28,6 +28,7 @@ export const GROUP_VIEW = {
 export const GROUP_TAB = {
   COLLECTION: "collection",
   VOTING: "voting",
+  HISTORY: "history",
   SETTINGS: "settings",
   MANAGE: "manage",
 };

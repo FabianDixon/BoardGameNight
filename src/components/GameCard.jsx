@@ -8,20 +8,35 @@ function averageRating(game) {
   return (game.ratingTotal / game.ratingCount).toFixed(1);
 }
 
-export default function GameCard({ game, inCollection, onOpen, onAdd, onRemove }) {
+export default function GameCard({ game, inCollection, onOpen, onAdd, onRemove, view = "library" }) {
   return (
-    <Card interactive noPadding onClick={onOpen}>
-      <GameImage src={game.imageUrl} alt={game.title} />
+    <Card interactive noPadding onClick={onOpen} className="group h-full">
+      <GameImage
+        src={game.imageUrl}
+        alt={game.title}
+        className={view === "collection" ? "bg-emerald-950/20" : ""}
+      />
 
       <CardBody>
-        <h2 className="text-xl font-semibold text-white">{game.title}</h2>
-        <p className="text-sm text-gray-300 mt-1 line-clamp-2">{game.description}</p>
-        <p className="mt-2 text-yellow-400">⭐ {averageRating(game)}</p>
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="text-lg font-semibold leading-tight text-white line-clamp-2">{game.title}</h2>
+          <span className="ui-chip-yellow shrink-0">⭐ {averageRating(game)}</span>
+        </div>
+
+        <p className="text-sm text-neutral-300 line-clamp-2 min-h-[2.5rem]">
+          {game.description || "No description available."}
+        </p>
+
+        {view === "collection" ? (
+          <div className="ui-chip-green w-fit">Your shelf</div>
+        ) : inCollection ? (
+          <div className="ui-chip-green w-fit">In your collection</div>
+        ) : null}
       </CardBody>
 
-      <CardFooter className="flex flex-col gap-1">
+      <CardFooter className="mt-auto border-t border-neutral-700/80 flex items-center justify-between gap-2 pt-3">
         <button
-          className="text-sm text-blue-400 hover:underline w-fit"
+          className="ui-btn-ghost px-3 py-1.5 text-xs"
           onClick={(e) => {
             e.stopPropagation();
             onOpen();
@@ -35,6 +50,7 @@ export default function GameCard({ game, inCollection, onOpen, onAdd, onRemove }
           onAdd={onAdd}
           onRemove={onRemove}
           stopPropagation
+          compact
         />
       </CardFooter>
     </Card>

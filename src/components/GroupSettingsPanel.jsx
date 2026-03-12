@@ -1,6 +1,7 @@
 // src/components/GroupSettingsPanel.jsx
 import { useMemo, useState } from "react";
 import { DEFAULT_WEIGHTS } from "../weights/weighting";
+import { getGameTagLabel, normalizeGameTags } from "../utils/gameTags";
 
 function toNumberOrEmpty(v) {
   if (v === "" || v === null || v === undefined) return "";
@@ -23,6 +24,7 @@ export default function GroupSettingsPanel({
   // Settings docs
   meta,
   weights,
+  availableTags,
 
   // Permissions
   canEditMeta,
@@ -48,6 +50,7 @@ export default function GroupSettingsPanel({
     () => ({
       disallowVotingOwnSubmission: meta?.disallowVotingOwnSubmission ?? false,
       moderatorsCanEditWeights: meta?.moderatorsCanEditWeights ?? false,
+      hiddenTags: normalizeGameTags(meta?.hiddenTags),
 
       autoAdvanceWhenAllSubmitted: meta?.autoAdvanceWhenAllSubmitted ?? false,
       autoAdvanceWhenAllVoted: meta?.autoAdvanceWhenAllVoted ?? false,
@@ -91,6 +94,7 @@ export default function GroupSettingsPanel({
         canEditMeta={canEditMeta}
         ownerOnlyMsg={ownerOnlyMsg}
         initial={metaInitial}
+        availableTags={availableTags || []}
         metaExists={metaExists}
         onInitMeta={onInitMeta}
         onSaveMeta={onSaveMeta}
@@ -127,6 +131,7 @@ function MetaSettingsSection({
   canEditMeta,
   ownerOnlyMsg,
   initial,
+  availableTags = [],
   metaExists,
   onInitMeta,
   onSaveMeta,
@@ -210,6 +215,41 @@ function MetaSettingsSection({
         />
       </div>
 
+      <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900 space-y-2">
+        <div>
+          <div className="font-semibold text-sm text-white">Hidden tags in Group Collection</div>
+          <div className="text-xs text-gray-400 mt-1">
+            Games with any selected tag are hidden from Group Collection only.
+          </div>
+        </div>
+
+        {(availableTags || []).length === 0 ? (
+          <div className="text-xs text-gray-400">No tags found in this group's games yet.</div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {availableTags.map((tag) => {
+              const selected = metaForm.hiddenTags.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  disabled={!canEditMeta}
+                  className={`ui-pill ${selected ? "ui-pill-active" : "ui-pill-inactive"}`}
+                  onClick={() => {
+                    const next = selected
+                      ? metaForm.hiddenTags.filter((x) => x !== tag)
+                      : [...metaForm.hiddenTags, tag];
+                    setMetaField("hiddenTags", normalizeGameTags(next));
+                  }}
+                >
+                  {selected ? "🙈" : "🏷️"} {getGameTagLabel(tag)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="flex flex-wrap gap-2">
         {!metaExists && canEditMeta && typeof onInitMeta === "function" && (
           <button
@@ -229,6 +269,7 @@ function MetaSettingsSection({
             onSaveMeta?.({
               disallowVotingOwnSubmission: !!metaForm.disallowVotingOwnSubmission,
               moderatorsCanEditWeights: !!metaForm.moderatorsCanEditWeights,
+              hiddenTags: normalizeGameTags(metaForm.hiddenTags),
               autoAdvanceWhenAllSubmitted: !!metaForm.autoAdvanceWhenAllSubmitted,
               autoAdvanceWhenAllVoted: !!metaForm.autoAdvanceWhenAllVoted,
               collectingDurationMinutes: Number(metaForm.collectingDurationMinutes) || 10,

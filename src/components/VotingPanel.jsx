@@ -3,6 +3,12 @@ import { useMemo, useState } from "react";
 import GameImage from "./GameImage";
 import Fab from "./ui/Fab";
 import { VOTE_STATUS } from "../constants/workflow";
+import {
+  DEFAULT_AVATAR_ID,
+  avatarById,
+  avatarIconById,
+  isValidAvatarId,
+} from "../constants/avatars";
 
 function VoteTile({
   game,
@@ -287,6 +293,8 @@ function VotingPanelInner({
   onSaveSessionPlay,
   isSavingSessionPlay,
   sessionHistory,
+  memberProfilesById = {},
+  showArchiveHistory = true,
 
   canEmailSession,
   canManageSession,
@@ -470,6 +478,21 @@ function VotingPanelInner({
     );
   }, [members]);
 
+  const memberAvatarFor = (member) => {
+    const userId = String(member?.userId || "").trim();
+    const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
+    const avatarId = isValidAvatarId(profileAvatarId)
+      ? profileAvatarId
+      : (isValidAvatarId(member?.avatarId) ? member.avatarId : DEFAULT_AVATAR_ID);
+    const avatar = avatarById(avatarId);
+
+    return {
+      src: avatar?.src || null,
+      icon: avatar?.icon || avatarIconById(avatarId),
+      label: avatar?.label || "Avatar",
+    };
+  };
+
   const initialHistoryPlayedDate = status === VOTE_STATUS.CLOSED
     ? toDateInputValue(
         typeof sessionPlayRecord?.playedAt === "number"
@@ -598,130 +621,134 @@ function VotingPanelInner({
 
   return (
     <div className="space-y-4">
-      <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4">
-        <h2 className="text-2xl font-bold text-white">Session</h2>
-        <div className="mt-2 text-sm text-gray-300">
-          Active:{" "}
-          <span className="font-semibold">
-            {activeVote ? `Session (${activeVote.status || "?"})` : "—"}
-          </span>
-        </div>
+      {/* SESSION HEADER & STATUS */}
+      <div className="ui-surface p-5 md:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-2xl md:text-3xl font-bold text-white">Session</h2>
+            
+            {!activeVote ? (
+              <div className="mt-3">
+                <span className="ui-chip-muted">No active session</span>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {activeVote?.status === VOTE_STATUS.COLLECTING && (
+                    <>
+                      <span className="ui-chip-blue">Collecting submissions</span>
+                      <span className="text-sm text-neutral-400">
+                        {formatProgress(submissionsCount, groupMemberCount)} of {groupMemberCount}
+                      </span>
+                    </>
+                  )}
+                  {activeVote?.status === VOTE_STATUS.OPEN && (
+                    <>
+                      <span className="ui-chip-blue">Voting open</span>
+                      <span className="text-sm text-neutral-400">
+                        {formatProgress(ballotsCount, groupMemberCount)} of {groupMemberCount}
+                      </span>
+                    </>
+                  )}
+                  {activeVote?.status === VOTE_STATUS.CLOSED && (
+                    <span className="ui-chip-green">Results revealed</span>
+                  )}
+                </div>
 
-        {activeVote?.status === VOTE_STATUS.COLLECTING && (
-          <div className="mt-2 flex flex-wrap gap-2 text-sm">
-            <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-900 text-white">
-              Submissions: <span className="font-semibold tabular-nums">
-                {formatProgress(submissionsCount, groupMemberCount)}
-              </span>
-            </span>
-
-            {isNoSubmission && (
-              <span className="px-2 py-1 rounded-full border border-neutral-700 bg-blue-900 text-blue-300">
-                ⊗ No Submission
-              </span>
-            )}
-
-            {mySubId && !isNoSubmission && (
-              <span className="px-2 py-1 rounded-full border border-neutral-700 bg-green-900 text-green-300">
-                ✅ Submitted
-              </span>
+                <div className="space-y-1">
+                  {activeVote?.status === VOTE_STATUS.COLLECTING && (
+                    <div className="text-sm text-neutral-300">
+                      Your submission:{" "}
+                      <span className="font-semibold text-white">
+                        {isNoSubmission
+                          ? "⊗ No Submission"
+                          : mySubId
+                          ? titleById(gameMap, mySubId)
+                          : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {activeVote?.status === VOTE_STATUS.OPEN && (
+                    <div className="text-sm text-neutral-300">
+                      Your vote:{" "}
+                      <span className="font-semibold text-white">
+                        {myBallot?.gameId ? titleById(gameMap, myBallot.gameId) : "—"}
+                      </span>
+                    </div>
+                  )}
+                  {activeVote?.status === VOTE_STATUS.CLOSED && (
+                    <div className="text-sm text-neutral-300">
+                      Winner:{" "}
+                      <span className="font-semibold text-white">
+                        {winnerRow ? winnerRow.title : "No votes cast"}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
-        )}
 
-        {activeVote?.status === VOTE_STATUS.OPEN && (
-          <div className="mt-2 flex flex-wrap gap-2 text-sm">
-            <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-900 text-gray-300">
-              Votes: <span className="font-semibold tabular-nums">
-                {formatProgress(ballotsCount, groupMemberCount)}
-              </span>
-            </span>
-
-            {alreadyVoted && (
-              <span className="px-2 py-1 rounded-full border border-neutral-700 bg-green-900 text-green-300">
-                ✅ Voted
-              </span>
-            )}
-          </div>
-        )}
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {!activeVote && (
-            <button
-              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
-              onClick={onCallSession}
-            >
-              Call session
-            </button>
-          )}
-
-          {activeVote?.status === VOTE_STATUS.COLLECTING && canManageSession && (
-            <button
-              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
-              onClick={onStartVoting}
-            >
-              Start voting
-            </button>
-          )}
-
-          {activeVote?.status === VOTE_STATUS.OPEN && (
-            <button
-              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
-              onClick={onCloseVote}
-              disabled={!canCloseActiveVote}
-              title={!canCloseActiveVote ? "Only session/group owner can close" : ""}
-            >
-              Close & reveal
-            </button>
-          )}
-
-          {activeVote?.status === VOTE_STATUS.CLOSED && (
-            <>
+          {/* SESSION CONTROL BUTTONS */}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            {!activeVote && (
               <button
-                className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
-                onClick={() => onExportSession?.(activeVote.id)}
-              >
-                Download JSON
-              </button>
-
-              {canEmailSession && (
-                <button
-                  className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
-                  onClick={() => onEmailSession?.(activeVote.id)}
-                >
-                  Email JSON
-                </button>
-              )}
-
-              <button
-                className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
+                className="ui-btn-primary text-sm"
                 onClick={onCallSession}
               >
-                Call next session
+                Call session
               </button>
-            </>
-          )}
+            )}
+
+            {activeVote?.status === VOTE_STATUS.COLLECTING && canManageSession && (
+              <button
+                className="ui-btn-primary text-sm"
+                onClick={onStartVoting}
+              >
+                Start voting
+              </button>
+            )}
+
+            {activeVote?.status === VOTE_STATUS.OPEN && (
+              <button
+                className="ui-btn-primary text-sm"
+                onClick={onCloseVote}
+                disabled={!canCloseActiveVote}
+                title={!canCloseActiveVote ? "Only session/group owner can close" : ""}
+              >
+                Close & reveal
+              </button>
+            )}
+
+            {activeVote?.status === VOTE_STATUS.CLOSED && (
+              <button
+                className="ui-btn-secondary text-sm"
+                onClick={onCallSession}
+              >
+                Next session
+              </button>
+            )}
+          </div>
         </div>
 
-        {activeVote?.status === VOTE_STATUS.COLLECTING && (
-          <div className="mt-4 text-sm text-gray-300">
-            Your submission:{" "}
-            <span className="font-semibold">
-              {isNoSubmission
-                ? "No Submission"
-                : mySubId
-                ? titleById(gameMap, mySubId)
-                : "—"}
-            </span>
-          </div>
-        )}
+        {/* EXPORT BUTTONS - only shown when closed */}
+        {activeVote?.status === VOTE_STATUS.CLOSED && (
+          <div className="mt-4 pt-4 border-t border-neutral-700 flex flex-wrap gap-2">
+            <button
+              className="ui-btn-secondary text-xs"
+              onClick={() => onExportSession?.(activeVote.id)}
+            >
+              Download JSON
+            </button>
 
-        {activeVote?.status === VOTE_STATUS.OPEN && (
-          <div className="mt-4 text-sm text-gray-300">
-            Your vote:{" "}
-            <span className="font-semibold">
-              {myBallot?.gameId ? titleById(gameMap, myBallot.gameId) : "—"}
-            </span>
+            {canEmailSession && (
+              <button
+                className="ui-btn-secondary text-xs"
+                onClick={() => onEmailSession?.(activeVote.id)}
+              >
+                Email JSON
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -826,102 +853,95 @@ function VotingPanelInner({
       )}
 
       {activeVote?.status === VOTE_STATUS.CLOSED && (
-        <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4 space-y-3">
-          <h3 className="text-xl font-semibold text-white">Results</h3>
+        <>
+          {/* RESULTS SECTION */}
+          <div className="ui-surface p-5 md:p-6 space-y-4">
+            <h3 className="text-2xl font-bold text-white">Results</h3>
 
-          {winnerRow ? (
-            <div className="p-3 rounded-xl border border-neutral-700 bg-neutral-900">
-              <div className="text-sm text-gray-400">Winner</div>
-              <div className="text-lg font-semibold flex items-center gap-2 text-white">
-                {winnerRow.title}
-                <span className="text-xs px-2 py-0.5 rounded-full border border-neutral-700 bg-neutral-800 text-gray-300">
-                  🏆 Winner
-                </span>
+            {winnerRow ? (
+              <div className="ui-surface-raised p-4 border-l-4 border-blue-500">
+                <div className="text-xs uppercase tracking-wide text-neutral-400 mb-1">Selected game</div>
+                <div className="text-xl font-bold text-white mb-2">🏆 {winnerRow.title}</div>
+                <div className="text-sm text-neutral-300 space-y-1">
+                  <div>
+                    Score: <span className="font-semibold">{formatScore(winnerRow.score)}</span>
+                  </div>
+                  <div>
+                    Votes: <span className="font-semibold">{winnerRow.votes}</span>
+                  </div>
+                </div>
               </div>
-
-              <div className="text-sm text-gray-300 mt-1">
-                Score:{" "}
-                <span className="font-semibold tabular-nums">
-                  {formatScore(winnerRow.score)}
-                </span>
-                {" · "}
-                Votes: <span className="tabular-nums">{winnerRow.votes}</span>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-300">No winner recorded (no votes cast).</p>
-          )}
-
-          <div>
-            <div className="text-sm font-semibold mb-2 text-white">Scores</div>
-            {scoredResults.length === 0 ? (
-              <p className="text-sm text-gray-300">No results.</p>
             ) : (
-              <ul className="text-sm space-y-1">
-                {scoredResults.map((r) => (
-                  <li
-                    key={r.gameId}
-                    className="flex items-center justify-between gap-3"
-                  >
-                    <span className={r.isWinner ? "font-semibold text-white" : "text-gray-300"}>
-                      {r.isWinner ? "🏆 " : ""}
-                      {r.title}
-                    </span>
-                    <span className="tabular-nums text-gray-300">
-                      {formatScore(r.score)}
-                      <span className="text-gray-400">
-                        {" "}
-                        · {r.votes} vote{r.votes === 1 ? "" : "s"}
+              <div className="ui-surface-subtle p-4">
+                <p className="text-sm text-neutral-400">No winner recorded (no votes cast)</p>
+              </div>
+            )}
+
+            {scoredResults.length > 0 && (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-neutral-400 mb-3">Score board</div>
+                <div className="space-y-2">
+                  {scoredResults.map((r) => (
+                    <div
+                      key={r.gameId}
+                      className="ui-surface-subtle p-3 flex items-center justify-between gap-3"
+                    >
+                      <span className={r.isWinner ? "font-semibold text-white" : "text-neutral-300"}>
+                        {r.isWinner && "🏆 "}
+                        {r.title}
                       </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                      <div className="text-right text-sm text-neutral-400 tabular-nums">
+                        <div className="font-semibold text-white">{formatScore(r.score)}</div>
+                        <div className="text-xs">{r.votes} vote{r.votes === 1 ? "" : "s"}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
-          <div className="pt-2 border-t border-neutral-700 space-y-3">
-            <div className="text-sm font-semibold text-white">Session history</div>
-
-            <div className="text-xs text-gray-400">
-              {sessionLabelFromIndex(
-                sessionPlayRecord?.sessionIndex,
-                "Current session"
-              )}
+          {/* SESSION HISTORY EDITING FORM */}
+          <div className="ui-surface p-5 md:p-6 space-y-4">
+            <div className="border-b border-neutral-700 pb-4">
+              <h3 className="text-lg font-semibold text-white">Record session details</h3>
+              <p className="text-sm text-neutral-400 mt-1">
+                Log what was played and the outcomes for your group's archive.
+              </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">Played date</label>
+              <label className="ui-field-label">Played date</label>
               <input
                 type="date"
                 value={historyPlayedDate}
                 onChange={(e) => setHistoryPlayedDate(e.target.value)}
-                className="w-full border border-neutral-700 rounded-lg px-3 py-2 text-sm bg-neutral-900 text-white"
+                className="w-full"
               />
             </div>
 
             <div className="space-y-3">
               <div>
-                <div className="text-sm font-medium mb-1 text-gray-300">Primary played game</div>
+                <div className="ui-field-label">Primary game</div>
                 {winnerGameId ? (
-                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm flex items-center justify-between gap-3">
-                    <span className="font-medium text-white">{titleById(gameMap, winnerGameId)}</span>
-                    <span className="text-xs text-gray-400">Winner (prefilled)</span>
+                  <div className="ui-surface-subtle p-3 rounded-xl">
+                    <div className="text-sm font-medium text-white">{titleById(gameMap, winnerGameId)}</div>
+                    <div className="text-xs text-neutral-400 mt-1">Winner (auto-filled)</div>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-gray-400">
-                    No winner was recorded for this session.
+                  <div className="ui-surface-subtle p-3 rounded-xl">
+                    <p className="text-sm text-neutral-400">No winner recorded for this session</p>
                   </div>
                 )}
               </div>
 
               <div>
-                <div className="text-sm font-medium mb-1 text-gray-300">Additional played games</div>
-                <div className="text-xs text-gray-400 mb-2">
-                  Select any other games the group also played.
+                <div className="ui-field-label">Additional games played</div>
+                <div className="ui-field-hint mb-3">
+                  Select any other games the group played during this session.
                 </div>
 
-                <div className="rounded-lg border border-neutral-700 bg-neutral-900">
+                <div className="ui-surface-subtle border rounded-xl overflow-hidden">
                   <div className="max-h-60 overflow-y-auto">
                     {historyOptions
                       .filter((g) => g.id !== winnerGameId)
@@ -930,7 +950,7 @@ function VotingPanelInner({
                         return (
                           <label
                             key={g.id}
-                            className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800"
+                            className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800 transition"
                           >
                             <input
                               type="checkbox"
@@ -938,7 +958,7 @@ function VotingPanelInner({
                               checked={checked}
                               onChange={() => togglePlayedGame(g.id)}
                             />
-                            <span className="block flex-1 min-w-0 break-words text-sm leading-5 text-gray-300">
+                            <span className="block flex-1 min-w-0 break-words text-sm text-neutral-300">
                               {g.title}
                             </span>
                           </label>
@@ -949,24 +969,17 @@ function VotingPanelInner({
               </div>
 
               <div>
-                <div className="text-sm font-medium mb-1 text-gray-300">Player results</div>
-                <div className="text-xs text-gray-400 mb-2">
-                  Record player placements or co-op outcomes for this session.
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                <div className="ui-field-label">Result type</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {SESSION_RESULT_MODE_OPTIONS.map((option) => {
                     const selected = historyResultMode === option.value;
                     return (
                       <button
                         key={option.value}
                         type="button"
-                        className={[
-                          "rounded-lg border px-3 py-2 text-sm transition",
-                          selected
-                            ? "border-blue-500 bg-blue-900 text-blue-100"
-                            : "border-neutral-700 bg-neutral-900 text-gray-300 hover:bg-neutral-800",
-                        ].join(" ")}
+                        className={`ui-pill text-xs ${
+                          selected ? "ui-pill-active" : "ui-pill-inactive"
+                        }`}
                         onClick={() => handleResultModeChange(option.value)}
                       >
                         {option.label}
@@ -974,123 +987,155 @@ function VotingPanelInner({
                     );
                   })}
                 </div>
-
-                {historyResultMode === "ranked" && (
-                  <div className="rounded-lg border border-neutral-700 bg-neutral-900">
-                    <div className="px-3 py-2 border-b border-neutral-700 text-xs text-gray-400">
-                      Assign the same place to multiple players to record a tie. Leave players unassigned if needed.
-                    </div>
-
-                    {memberOptions.length === 0 ? (
-                      <div className="px-3 py-3 text-sm text-gray-400">No group members available.</div>
-                    ) : (
-                      <div className="max-h-72 overflow-y-auto">
-                        {memberOptions.map((member) => {
-                          const selectedPlacement = historyPlacements.find(
-                            (entry) => entry.userId === member.userId
-                          );
-
-                          return (
-                            <div
-                              key={member.userId}
-                              className="flex items-center justify-between gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0"
-                            >
-                              <span className="text-sm text-gray-300 min-w-0 truncate">
-                                {memberDisplayName(member, member.userId)}
-                              </span>
-
-                              <select
-                                className="border border-neutral-700 rounded px-2 py-1.5 text-sm bg-neutral-800 text-white"
-                                value={selectedPlacement?.place || ""}
-                                onChange={(e) => {
-                                  const rawValue = e.target.value;
-                                  setRankedPlacement(
-                                    member.userId,
-                                    rawValue ? Number(rawValue) : null
-                                  );
-                                }}
-                              >
-                                <option value="">Unassigned</option>
-                                {placementChoices.map((place) => (
-                                  <option key={place} value={place}>
-                                    {formatPlaceLabel(place)}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {historyResultMode === "coop-win" && (
-                  <div className="rounded-lg border border-neutral-700 bg-neutral-900">
-                    <div className="px-3 py-2 border-b border-neutral-700 text-xs text-gray-400">
-                      Select the players who won together.
-                    </div>
-
-                    {memberOptions.length === 0 ? (
-                      <div className="px-3 py-3 text-sm text-gray-400">No group members available.</div>
-                    ) : (
-                      <div className="max-h-72 overflow-y-auto">
-                        {memberOptions.map((member) => {
-                          const checked = historyPlacements.some(
-                            (entry) => entry.userId === member.userId
-                          );
-
-                          return (
-                            <label
-                              key={member.userId}
-                              className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800"
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-1 shrink-0"
-                                checked={checked}
-                                onChange={() => toggleCoopWinner(member.userId)}
-                              />
-                              <span className="block flex-1 min-w-0 break-words text-sm leading-5 text-gray-300">
-                                {memberDisplayName(member, member.userId)}
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {historyResultMode === "coop-loss" && (
-                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-gray-300">
-                    This session will be saved as a co-op loss with no winners or placements.
-                  </div>
-                )}
-
-                {historyResultMode === "no-winner" && (
-                  <div className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-3 text-sm text-gray-300">
-                    This session will be saved with no player winner or placements.
-                  </div>
-                )}
               </div>
+
+              {historyResultMode === "ranked" && (
+                <div className="ui-surface-subtle border rounded-xl">
+                  <div className="px-3 py-2 border-b border-neutral-700">
+                    <div className="ui-field-hint">
+                      Assign placements, or leave players unassigned. Ties are supported.
+                    </div>
+                  </div>
+
+                  {memberOptions.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-neutral-400">No group members available.</div>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto">
+                      {memberOptions.map((member) => {
+                        const selectedPlacement = historyPlacements.find(
+                          (entry) => entry.userId === member.userId
+                        );
+                        const avatar = memberAvatarFor(member);
+
+                        return (
+                          <div
+                            key={member.userId}
+                            className="flex items-center justify-between gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-xs shrink-0">
+                                {avatar.src ? (
+                                  <img
+                                    src={avatar.src}
+                                    alt={avatar.label}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  avatar.icon
+                                )}
+                              </span>
+                              <span className="text-sm text-neutral-300 min-w-0 truncate">
+                                {memberDisplayName(member, member.userId)}
+                              </span>
+                            </div>
+
+                            <select
+                              className="text-sm"
+                              value={selectedPlacement?.place || ""}
+                              onChange={(e) => {
+                                const rawValue = e.target.value;
+                                setRankedPlacement(
+                                  member.userId,
+                                  rawValue ? Number(rawValue) : null
+                                );
+                              }}
+                            >
+                              <option value="">Unassigned</option>
+                              {placementChoices.map((place) => (
+                                <option key={place} value={place}>
+                                  {formatPlaceLabel(place)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {historyResultMode === "coop-win" && (
+                <div className="ui-surface-subtle border rounded-xl">
+                  <div className="px-3 py-2 border-b border-neutral-700">
+                    <div className="ui-field-hint">Select the players who won together.</div>
+                  </div>
+
+                  {memberOptions.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-neutral-400">No group members available.</div>
+                  ) : (
+                    <div className="max-h-72 overflow-y-auto">
+                      {memberOptions.map((member) => {
+                        const checked = historyPlacements.some(
+                          (entry) => entry.userId === member.userId
+                        );
+                        const avatar = memberAvatarFor(member);
+
+                        return (
+                          <label
+                            key={member.userId}
+                            className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800 transition"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1 shrink-0"
+                              checked={checked}
+                              onChange={() => toggleCoopWinner(member.userId)}
+                            />
+                            <span className="block flex-1 min-w-0 break-words text-sm text-neutral-300">
+                              <span className="inline-flex items-center gap-2 min-w-0">
+                                <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-xs shrink-0">
+                                  {avatar.src ? (
+                                    <img
+                                      src={avatar.src}
+                                      alt={avatar.label}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    avatar.icon
+                                  )}
+                                </span>
+                                <span className="min-w-0 truncate">{memberDisplayName(member, member.userId)}</span>
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {historyResultMode === "coop-loss" && (
+                <div className="ui-surface-subtle p-4 rounded-xl">
+                  <p className="text-sm text-neutral-300">This session will be recorded as a co-op loss.</p>
+                </div>
+              )}
+
+              {historyResultMode === "no-winner" && (
+                <div className="ui-surface-subtle p-4 rounded-xl">
+                  <p className="text-sm text-neutral-300">This session will be recorded with no player winner.</p>
+                </div>
+              )}
             </div>
 
-            <button
-              type="button"
-              className="px-4 py-2 rounded-xl border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white disabled:opacity-50"
-              onClick={handleSaveSessionPlay}
-              disabled={!canManageSession || isSavingSessionPlay}
-              title={!canManageSession ? "Only session/group owner can save" : ""}
-            >
-              {isSavingSessionPlay ? "Saving…" : "Save session history"}
-            </button>
+            <div className="pt-2 border-t border-neutral-700">
+              <button
+                type="button"
+                className="ui-btn-primary w-full text-sm"
+                onClick={handleSaveSessionPlay}
+                disabled={!canManageSession || isSavingSessionPlay}
+                title={!canManageSession ? "Only session/group owner can save" : ""}
+              >
+                {isSavingSessionPlay ? "Saving session…" : "Save session details"}
+              </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* Session History */}
-      {sessionHistory && sessionHistory.length > 0 && (
+      {showArchiveHistory && sessionHistory && sessionHistory.length > 0 && (
         <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4">
           <h3 className="text-xl font-semibold mb-3 text-white">Session History</h3>
           

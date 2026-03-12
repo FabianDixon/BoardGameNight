@@ -48,6 +48,12 @@ import GameTagsField from "./components/GameTagsField";
 import GameTagFilter from "./components/GameTagFilter";
 import { normalizeGameTags, getUniqueTagsFromGames } from "./utils/gameTags";
 import { VOTE_STATUS, APP_TAB, GROUP_VIEW, GROUP_TAB } from "./constants/workflow";
+import {
+  DEFAULT_AVATAR_ID,
+  avatarById,
+  avatarIconById,
+  isValidAvatarId,
+} from "./constants/avatars";
 
 const auth = getAuth();
 
@@ -62,7 +68,7 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
     >
       {/* Only allow backdrop click if dismissible */}
       <div
-        className="absolute inset-0 bg-black/40"
+        className="ui-modal-backdrop"
         onClick={dismissible ? onClose : undefined}
         aria-hidden="true"
         style={{
@@ -70,13 +76,13 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
         }}
       />
 
-      <div className="relative flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-800 shadow-xl">
-        <div className="flex items-center justify-between p-4 border-b border-neutral-700">
+      <div className="ui-modal-shell">
+        <div className="ui-modal-header">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
 
           {dismissible && (
             <button
-              className="px-3 py-1 rounded border border-neutral-700 bg-neutral-700 hover:bg-neutral-600 text-white"
+              className="ui-btn-secondary px-3 py-1"
               onClick={onClose}
             >
               Close
@@ -84,7 +90,7 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
           )}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+        <div className="ui-modal-body">{children}</div>
       </div>
     </div>
   );
@@ -172,6 +178,7 @@ export default function App() {
   const [groupAccessReady, setGroupAccessReady] = useState(false);
 
   const members = useGroupMembers(user, currentGroupId, groupAccessReady);
+  const [memberProfilesById, setMemberProfilesById] = useState({});
 
   const [groupView, setGroupView] = useState(GROUP_VIEW.PICKER); // "picker" | "detail"
   const [groupTab, setGroupTab] = useState(GROUP_TAB.COLLECTION);
@@ -269,14 +276,17 @@ export default function App() {
           const snap = await getDoc(ref);
 
           if (!snap.exists()) {
-            await setDoc(ref, { nickname: "", createdAt: Date.now() });
-            setProfile({ nickname: "" });
+            await setDoc(ref, { nickname: "", avatarId: DEFAULT_AVATAR_ID, createdAt: Date.now() });
+            setProfile({ nickname: "", avatarId: DEFAULT_AVATAR_ID });
             setNickname("");
             return;
           }
 
           const data = snap.data();
-          setProfile(data);
+          setProfile({
+            ...data,
+            avatarId: isValidAvatarId(data?.avatarId) ? data.avatarId : DEFAULT_AVATAR_ID,
+          });
           setNickname(data.nickname || "");
         } catch (err) {
           console.error("Failed to load profile:", err);
@@ -353,6 +363,26 @@ export default function App() {
     [user, profile?.nickname, myGroups]
   );
 
+  const syncMyAvatarToGroupMemberships = useCallback(
+    async (nextAvatarId) => {
+      if (!user) return;
+      const avatarId = isValidAvatarId(nextAvatarId) ? nextAvatarId : DEFAULT_AVATAR_ID;
+
+      const batch = writeBatch(db);
+
+      for (const g of myGroups) {
+        batch.set(
+          doc(db, "groups", g.id, "members", user.uid),
+          { avatarId },
+          { merge: true }
+        );
+      }
+
+      await batch.commit();
+    },
+    [user, myGroups]
+  );
+
   // --Suscribe to settings --
 
   // -- Group members --
@@ -392,6 +422,21 @@ export default function App() {
     if (!user?.uid || !profile?.nickname || myGroups.length === 0) return;
     syncMyNicknameToGroupMemberships(profile.nickname).catch(console.error);
   }, [user?.uid, profile?.nickname, myGroups.length, syncMyNicknameToGroupMemberships]);
+
+  useEffect(() => {
+    const rows = (members || []).map((member) => {
+      const userId = String(member?.userId || "").trim();
+      if (!userId) return null;
+      return [userId, { avatarId: member?.avatarId || null }];
+    }).filter(Boolean);
+
+    setMemberProfilesById(Object.fromEntries(rows));
+  }, [members]);
+
+  useEffect(() => {
+    if (!user?.uid || !profile?.avatarId || myGroups.length === 0) return;
+    syncMyAvatarToGroupMemberships(profile.avatarId).catch(console.error);
+  }, [user?.uid, profile?.avatarId, myGroups.length, syncMyAvatarToGroupMemberships]);
 
   // Gate group-dependent reads: wait for membership doc to be visible server-side
   // This prevents permission-denied errors from hooks that subscribe to group data
@@ -498,6 +543,10 @@ export default function App() {
       })
       .filter(Boolean);
   }, [currentGroupId, games, groupGameRefs, poolDocs]);
+
+  const groupAvailableTags = useMemo(() => {
+    return getUniqueTagsFromGames(groupGames);
+  }, [groupGames]);
 
   useEffect(() => {
     let cancelled = false;
@@ -808,6 +857,15 @@ export default function App() {
     setNickname(trimmed);
 
     await syncMyNicknameToGroupMemberships(trimmed);
+  }
+
+  async function saveAvatarId(nextAvatarId) {
+    if (!user) return;
+    const avatarId = isValidAvatarId(nextAvatarId) ? nextAvatarId : DEFAULT_AVATAR_ID;
+
+    await updateDoc(doc(db, "users", user.uid), { avatarId });
+    setProfile((prev) => ({ ...(prev || {}), avatarId }));
+    await syncMyAvatarToGroupMemberships(avatarId);
   }
 
   function safeString(v) {
@@ -1164,6 +1222,7 @@ export default function App() {
         // auto-advance flags (defaults off)
         autoAdvanceWhenAllSubmitted: false,
         autoAdvanceWhenAllVoted: false,
+        hiddenTags: [],
 
         createdAt: Date.now(),
         createdBy: user.uid,
@@ -1203,6 +1262,7 @@ export default function App() {
         role: "owner",
         joinedAt: Date.now(),
         nickname: safeString(profile?.nickname),
+        avatarId: isValidAvatarId(profile?.avatarId) ? profile.avatarId : DEFAULT_AVATAR_ID,
       });
   
       await setDoc(doc(db, "users", user.uid, "groups", groupRef.id), {
@@ -1263,6 +1323,7 @@ export default function App() {
         role: "member",
         joinedAt: Date.now(),
         nickname: profile?.nickname || "",
+        avatarId: isValidAvatarId(profile?.avatarId) ? profile.avatarId : DEFAULT_AVATAR_ID,
       });
 
       await waitForServerDoc(memberRef);
@@ -1367,7 +1428,12 @@ export default function App() {
       return;
     }
 
-    await setDoc(doc(db, "groups", currentGroupId, "settings", "meta"), patch, { merge: true });
+    const normalizedPatch = {
+      ...patch,
+      hiddenTags: normalizeGameTags(patch?.hiddenTags),
+    };
+
+    await setDoc(doc(db, "groups", currentGroupId, "settings", "meta"), normalizedPatch, { merge: true });
     showToast("Group rules saved.", "success");
   }
 
@@ -2143,9 +2209,25 @@ export default function App() {
     !isAddGameOpen &&
     !isEditGameOpen;
 
+  const topLevelTabs = [
+    { key: APP_TAB.LIBRARY, icon: "📚", label: "Library" },
+    { key: APP_TAB.COLLECTION, icon: "🧺", label: "Collection" },
+    { key: APP_TAB.GROUP, icon: "👥", label: "Groups" },
+    { key: APP_TAB.PROFILE, icon: "👤", label: "Profile" },
+  ];
+
+  function handleTopLevelTabClick(nextTab) {
+    setActiveTab(nextTab);
+    setSelectedGame(null);
+    setSearchQuery("");
+  }
+
+  const isDesktopViewport =
+    typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
+
   return (
-    <div className="min-h-screen bg-neutral-900 p-6">
-      <div className="sticky top-0 z-40 -mx-6 px-6 pt-4 pb-3 bg-neutral-900/95 backdrop-blur border-b border-neutral-800">
+    <div className="min-h-screen bg-neutral-950 p-6 pb-32 md:pb-8 text-neutral-100">
+      <div className="-mx-6 px-6 pt-4 pb-3 bg-neutral-900/95 backdrop-blur border-b border-neutral-800 md:sticky md:top-0 md:z-40">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold leading-tight text-white">🎲 Board Game Night</h1>
@@ -2156,38 +2238,27 @@ export default function App() {
               {activeTab === APP_TAB.PROFILE && "Your nickname and settings"}
             </p>
           </div>
-        </div>
 
-        {!showAuthPrompt && (
-          <div className="mt-3 flex gap-2 flex-wrap">
-            {[
-              { key: APP_TAB.LIBRARY, label: "📚 Library" },
-              { key: APP_TAB.COLLECTION, label: "🧺 My Collection" },
-              { key: APP_TAB.GROUP, label: "👥 Group" },
-              { key: APP_TAB.PROFILE, label: "👤 Profile" },
-            ].map((t) => {
-              const isActive = activeTab === t.key;
-              return (
-                <button
-                  key={t.key}
-                  className={`px-3 py-2 rounded-full border transition ${isActive
-                      ? "bg-neutral-800 border-neutral-700 shadow-sm"
-                      : "bg-neutral-900 border-neutral-700 hover:bg-neutral-800"
-                    }`}
-                  onClick={() => {
-                    setActiveTab(t.key);
-                    setSelectedGame(null);
-                    setSearchQuery("");
-                  }}
-                  disabled={t.key === APP_TAB.COLLECTION && !user}
-                  title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
-                >
-                  <span className="text-sm font-medium text-gray-100">{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+          {!showAuthPrompt && (
+            <div className="hidden md:flex items-center gap-2">
+              {topLevelTabs.map((t) => {
+                const isActive = activeTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    className={`ui-pill ${isActive ? "ui-pill-active" : "ui-pill-inactive"}`}
+                    onClick={() => handleTopLevelTabClick(t.key)}
+                    disabled={t.key === APP_TAB.COLLECTION && !user}
+                    title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
+                  >
+                    <span>{t.icon}</span>
+                    <span className="text-sm font-medium">{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Modal: Auth choice */}
@@ -2203,7 +2274,7 @@ export default function App() {
 
         <div className="flex flex-col gap-2">
           <button
-            className="bg-blue-600 text-white px-4 py-2 rounded"
+            className="ui-btn-primary"
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "guest");
               setShowAuthPrompt(false);
@@ -2214,7 +2285,7 @@ export default function App() {
           </button>
 
           <button
-            className="border border-neutral-700 px-4 py-2 rounded bg-neutral-700 hover:bg-neutral-600 text-white"
+            className="ui-btn-secondary"
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "signin");
               setShowAuthPrompt(false);
@@ -2245,7 +2316,7 @@ export default function App() {
       >
         <form onSubmit={saveEditedGame} className="space-y-3">
           <input
-            className="border p-2 w-full rounded"
+            className="w-full"
             placeholder="Title"
             value={editGameForm.title}
             onChange={(e) => setEditGameForm({ ...editGameForm, title: e.target.value })}
@@ -2253,7 +2324,7 @@ export default function App() {
           />
 
           <input
-            className="border p-2 w-full rounded"
+            className="w-full"
             placeholder="Image URL"
             value={editGameForm.imageUrl}
             onChange={(e) => setEditGameForm({ ...editGameForm, imageUrl: e.target.value })}
@@ -2271,7 +2342,7 @@ export default function App() {
           )}
 
           <textarea
-            className="border p-2 w-full rounded"
+            className="w-full"
             placeholder="Description"
             value={editGameForm.description}
             onChange={(e) => setEditGameForm({ ...editGameForm, description: e.target.value })}
@@ -2287,7 +2358,7 @@ export default function App() {
           <div className="flex items-center justify-between gap-3 pt-2">
           <button
             type="button"
-            className="border border-red-300 bg-red-50 text-red-700 px-4 py-2 rounded hover:bg-red-100 disabled:opacity-50"
+            className="ui-btn-danger"
             onClick={() => deleteGame(editGameForm.id)}
             disabled={!editGameForm.id || isDeletingGame}
             title="Delete game"
@@ -2296,7 +2367,7 @@ export default function App() {
           </button>
 
           <button
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+            className="ui-btn-primary"
             disabled={isDeletingGame}
           >
             Save changes
@@ -2313,6 +2384,7 @@ export default function App() {
           nickname={nickname}
           setNickname={setNickname}
           onSaveNickname={saveNickname}
+          onSaveAvatarId={saveAvatarId}
         />
       )}
 
@@ -2365,6 +2437,7 @@ export default function App() {
                     group={currentGroup}
                     groupTab={groupTab}
                     setGroupTab={setGroupTab}
+                    groupSettings={groupSettings}
                     onBack={() => setGroupView(GROUP_VIEW.PICKER)}
                     onLeaveGroup={leaveGroup}
                     groupGames={groupGames}
@@ -2405,8 +2478,238 @@ export default function App() {
                         onSaveSessionPlay={saveSessionPlay}
                         isSavingSessionPlay={isSavingSessionPlay}
                         sessionHistory={sessionHistory}
+                        memberProfilesById={memberProfilesById}
+                        showArchiveHistory={false}
                       />
                     }
+                    historyNode={(
+                      <div className="space-y-4">
+                        <div className="ui-surface p-5 md:p-6">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <h2 className="text-2xl md:text-3xl font-bold text-white">Session archive</h2>
+                              <p className="text-sm text-neutral-400 mt-1">
+                                A record of all your group's past sessions and outcomes.
+                              </p>
+                            </div>
+                            <span className="ui-chip-muted text-sm shrink-0">{sessionHistory?.length || 0} session{sessionHistory?.length === 1 ? "" : "s"}</span>
+                          </div>
+                        </div>
+
+                        {sessionHistory && sessionHistory.length > 0 ? (
+                          <div className="space-y-3 px-4 md:px-0">
+                            {sessionHistory.map((play, idx) => {
+                              const title = play?.winnerGameId
+                                ? (games.find((g) => g.id === play.winnerGameId)?.title || play.winnerGameId)
+                                : "No winner";
+
+                              const playedLabel =
+                                Number.isFinite(play?.playedAt)
+                                  ? new Date(play.playedAt).toLocaleDateString(undefined, {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                    })
+                                  : "Date unknown";
+
+                              const playResultMode = normalizeResultMode(
+                                play?.resultMode,
+                                defaultResultMode(play?.winnerGameId)
+                              );
+
+                              const playPlacements = normalizePlacements(
+                                play?.placements,
+                                playResultMode
+                              );
+
+                              const memberLabel = (userId) => {
+                                const value = String(userId || "").trim();
+                                const member = members.find((m) => m.userId === value);
+                                const nickname = String(member?.nickname || "").trim();
+                                if (nickname) return nickname;
+                                if (!value) return "Unknown member";
+                                return value.length <= 12
+                                  ? value
+                                  : `${value.slice(0, 6)}…${value.slice(-4)}`;
+                              };
+
+                              const memberAvatar = (userId) => {
+                                const value = String(userId || "").trim();
+                                const member = members.find((m) => m.userId === value);
+                                const profileAvatarId = memberProfilesById?.[value]?.avatarId;
+                                const avatarId = isValidAvatarId(profileAvatarId)
+                                  ? profileAvatarId
+                                  : (isValidAvatarId(member?.avatarId) ? member.avatarId : DEFAULT_AVATAR_ID);
+                                const avatar = avatarById(avatarId);
+
+                                return {
+                                  src: avatar?.src || null,
+                                  icon: avatar?.icon || avatarIconById(avatarId),
+                                  label: avatar?.label || "Avatar",
+                                };
+                              };
+
+                              const resultSummary = (() => {
+                                if (playResultMode === "coop-loss") return "Co-op loss recorded.";
+                                if (playResultMode === "no-winner") return "No player winner recorded.";
+                                if (playResultMode === "coop-win") {
+                                  if (!playPlacements.length) return "Co-op win recorded.";
+                                  return `Co-op winners: ${playPlacements
+                                    .map((entry) => memberLabel(entry.userId))
+                                    .join(", ")}`;
+                                }
+                                if (!playPlacements.length) return "No player placements recorded.";
+
+                                const grouped = new Map();
+                                for (const entry of playPlacements) {
+                                  const names = grouped.get(entry.place) || [];
+                                  names.push(memberLabel(entry.userId));
+                                  grouped.set(entry.place, names);
+                                }
+
+                                return [...grouped.entries()]
+                                  .sort((a, b) => a[0] - b[0])
+                                  .map(([place, names]) => {
+                                    const placeLabel = (() => {
+                                      const x = Number(place);
+                                      if (!Number.isFinite(x) || x < 1) return "—";
+                                      const abs = Math.abs(Math.trunc(x));
+                                      const mod100 = abs % 100;
+                                      if (mod100 >= 11 && mod100 <= 13) return `${abs}th`;
+                                      switch (abs % 10) {
+                                        case 1: return `${abs}st`;
+                                        case 2: return `${abs}nd`;
+                                        case 3: return `${abs}rd`;
+                                        default: return `${abs}th`;
+                                      }
+                                    })();
+                                    return `${placeLabel}: ${names.join(", ")}`;
+                                  })
+                                  .join(" · ");
+                              })();
+
+                              const placementGroups = (() => {
+                                if (playResultMode === "coop-win") {
+                                  if (!playPlacements.length) return [];
+                                  return [{ label: "Winners", userIds: playPlacements.map((entry) => entry.userId) }];
+                                }
+
+                                if (playResultMode !== "ranked" || !playPlacements.length) {
+                                  return [];
+                                }
+
+                                const grouped = new Map();
+                                for (const entry of playPlacements) {
+                                  const names = grouped.get(entry.place) || [];
+                                  names.push(entry.userId);
+                                  grouped.set(entry.place, names);
+                                }
+
+                                return [...grouped.entries()]
+                                  .sort((a, b) => a[0] - b[0])
+                                  .map(([place, userIds]) => {
+                                    const x = Number(place);
+                                    if (!Number.isFinite(x) || x < 1) return { label: "—", userIds };
+                                    const abs = Math.abs(Math.trunc(x));
+                                    const mod100 = abs % 100;
+                                    if (mod100 >= 11 && mod100 <= 13) return { label: `${abs}th`, userIds };
+                                    switch (abs % 10) {
+                                      case 1: return { label: `${abs}st`, userIds };
+                                      case 2: return { label: `${abs}nd`, userIds };
+                                      case 3: return { label: `${abs}rd`, userIds };
+                                      default: return { label: `${abs}th`, userIds };
+                                    }
+                                  });
+                              })();
+
+                              const playedGamesList = Array.isArray(play?.playedGameIds)
+                                ? play.playedGameIds.filter((id) => id !== play?.winnerGameId)
+                                : [];
+
+                              return (
+                                <div
+                                  key={play.id}
+                                  className="ui-surface p-4 md:p-5 space-y-3"
+                                >
+                                  <div className="flex items-start justify-between gap-4 pb-3 border-b border-neutral-700">
+                                    <div>
+                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">Date</div>
+                                      <div className="text-sm font-medium text-neutral-300">{playedLabel}</div>
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                                      <span className={`ui-chip-${playResultMode === "ranked" ? "blue" : playResultMode === "coop-win" ? "green" : "muted"}`}>
+                                        {playResultMode === "ranked" ? "Ranked" : playResultMode === "coop-win" ? "Co-op win" : playResultMode === "coop-loss" ? "Co-op loss" : "No winner"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Selected game</div>
+                                    <div className="text-lg font-bold text-white">🏆 {title}</div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Result</div>
+                                    <div className="text-sm text-neutral-300 leading-relaxed">{resultSummary}</div>
+
+                                    {placementGroups.length > 0 && (
+                                      <div className="mt-3 space-y-2">
+                                        {placementGroups.map((group) => (
+                                          <div key={group.label} className="flex items-start gap-2">
+                                            <span className="text-xs text-neutral-500 w-12 shrink-0 mt-1">{group.label}</span>
+                                            <div className="flex flex-wrap gap-2 min-w-0">
+                                              {group.userIds.map((userId) => {
+                                                const avatar = memberAvatar(userId);
+                                                return (
+                                                  <span
+                                                    key={`${group.label}-${userId}`}
+                                                    className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                                                  >
+                                                    <span className="h-5 w-5 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px]">
+                                                      {avatar.src ? (
+                                                        <img
+                                                          src={avatar.src}
+                                                          alt={avatar.label}
+                                                          className="h-full w-full object-cover"
+                                                        />
+                                                      ) : (
+                                                        avatar.icon
+                                                      )}
+                                                    </span>
+                                                    <span>{memberLabel(userId)}</span>
+                                                  </span>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {playedGamesList.length > 0 && (
+                                    <div>
+                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">
+                                        Also played <span className="text-blue-400">({playedGamesList.length})</span>
+                                      </div>
+                                      <div className="text-sm text-neutral-300 leading-relaxed">
+                                        {playedGamesList
+                                          .map((id) => games.find((g) => g.id === id)?.title || id)
+                                          .join(", ")}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="ui-surface p-5 md:p-6 text-center">
+                            <p className="text-sm text-neutral-400">No session history yet. Complete your first session to start building your archive.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     canEditNewness={user?.uid === currentGroup?.ownerId}
                     onTogglePlayedOverride={togglePlayedOverride}
                     settingsNode={
@@ -2416,6 +2719,7 @@ export default function App() {
                         members={members}
                         myRole={myRole}
                         meta={groupSettings}
+                        availableTags={groupAvailableTags}
                         canEditMeta={canEditGroupMeta}
                         canEditWeights={canEditWeights}
                         weights={groupWeightOverrides}
@@ -2435,7 +2739,7 @@ export default function App() {
                     onSetMyGameSharedInGroup={setMyGameSharedInGroup}
                   />
                 ) : (
-                  <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
+                  <div className="ui-surface p-4">
                     <p className="text-sm text-gray-300 mb-3">
                       No group selected. Please pick a group to continue.
                     </p>
@@ -2460,7 +2764,20 @@ export default function App() {
       !showGameDetail && (
         <>
           {/* Search & Tag Filter */}
-          <div className="mb-4 space-y-3">
+          <div className="mt-4 mb-5 ui-surface-subtle p-3 md:p-4 space-y-3 sticky top-0 md:top-[86px] z-30">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <h2 className="text-lg md:text-xl font-semibold text-white">
+                  {activeTab === "library" ? "Library" : "My Collection"}
+                </h2>
+                <p className="text-sm text-neutral-400">
+                  {activeTab === "library"
+                    ? "Browse and discover games"
+                    : "Your personal shelf of games"}
+                </p>
+              </div>
+            </div>
+
             <div className="flex gap-2 flex-wrap items-center">
               <input
                 type="text"
@@ -2471,7 +2788,7 @@ export default function App() {
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-1 min-w-[200px] border rounded-xl px-4 py-2 text-sm md:max-w-md"
+                className="flex-1 min-w-[220px] md:max-w-xl px-5 py-2.5"
               />
               <GameTagFilter
                 availableTags={getUniqueTagsFromGames(
@@ -2483,11 +2800,11 @@ export default function App() {
             </div>
 
             {selectedTagFilters.length > 0 && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pt-1">
                 {selectedTagFilters.map((tag) => (
                   <span
                     key={tag}
-                    className="inline-flex items-center gap-1 rounded-full border border-blue-500/40 bg-blue-500/10 px-3 py-1 text-xs text-blue-100"
+                    className="ui-chip-blue"
                   >
                     ✓ {tag}
                     <button
@@ -2506,7 +2823,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 items-start">
             {(activeTab === "collection" ? collectionGames : libraryGames).map(
               (game) => (
                 <GameCard
@@ -2516,6 +2833,7 @@ export default function App() {
                   onOpen={() => setSelectedGame(game)}
                   onAdd={() => addToCollection(game.id)}
                   onRemove={() => removeFromCollection(game.id)}
+                  view={activeTab}
                 />
               )
             )}
@@ -2528,7 +2846,37 @@ export default function App() {
         show={showFab}
         onClick={() => setIsAddGameOpen(true)}
         label="Add new game"
+        bottom={isDesktopViewport ? 24 : 96}
       />
+
+      {!showAuthPrompt && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-700 bg-neutral-900/95 backdrop-blur md:hidden">
+          <div className="mx-auto w-full max-w-3xl px-3 py-2">
+            <div className="grid grid-cols-4 gap-2">
+              {topLevelTabs.map((t) => {
+                const isActive = activeTab === t.key;
+                return (
+                  <button
+                    key={t.key}
+                    className={[
+                      "flex flex-col items-center justify-center rounded-xl py-1.5 px-2 text-xs transition",
+                      isActive
+                        ? "bg-neutral-700 text-white"
+                        : "text-neutral-300 hover:bg-neutral-800",
+                    ].join(" ")}
+                    onClick={() => handleTopLevelTabClick(t.key)}
+                    disabled={t.key === APP_TAB.COLLECTION && !user}
+                    title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
+                  >
+                    <span className="text-base leading-none">{t.icon}</span>
+                    <span className="mt-1 font-medium">{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </nav>
+      )}
 
       {/* Game detail (works from any tab) */}
       {showGameDetail && !isGroupInlineDetail && (

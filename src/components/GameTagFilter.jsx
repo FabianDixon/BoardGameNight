@@ -23,7 +23,7 @@ export default function GameTagFilter({ availableTags = [], selectedTags = [], o
     <div className="relative">
       <button
         type="button"
-        className="px-3 py-1.5 rounded border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-sm text-gray-200"
+        className="ui-btn-ghost px-3"
         onClick={() => setIsOpen(!isOpen)}
       >
         🏷️ Tags {selectedTags.length > 0 && `(${selectedTags.length})`}
@@ -36,7 +36,7 @@ export default function GameTagFilter({ availableTags = [], selectedTags = [], o
             onClick={() => setIsOpen(false)}
             aria-hidden="true"
           />
-          <div className="absolute top-full left-0 mt-1 bg-neutral-800 border border-neutral-700 rounded-lg shadow-lg p-3 z-50 min-w-[250px]">
+          <div className="absolute top-full left-0 mt-2 ui-surface p-3 z-50 min-w-[250px] shadow-xl">
             <div className="space-y-2 max-h-[40vh] overflow-y-auto">
               {availableTags.length === 0 ? (
                 <p className="text-sm text-gray-400">No tags available.</p>
@@ -49,7 +49,7 @@ export default function GameTagFilter({ availableTags = [], selectedTags = [], o
                         type="checkbox"
                         checked={selected}
                         onChange={() => toggleTag(tag)}
-                        className="w-4 h-4"
+                        className="w-4 h-4 accent-blue-500"
                       />
                       <span className="text-sm text-gray-200 flex-1">
                         {getGameTagLabel(tag)}
