@@ -20,7 +20,7 @@ export default function GroupsPanel({
   }, [myGroups]);
 
   return (
-    <div className="ui-surface p-4 md:p-5 space-y-4">
+    <div className="ui-surface mt-2 md:mt-3 p-4 md:p-5 space-y-4">
       <div>
         <h2 className="text-xl md:text-2xl font-semibold text-white">Groups</h2>
         <p className="text-sm text-neutral-400">Your game-night groups and shared clubs.</p>
