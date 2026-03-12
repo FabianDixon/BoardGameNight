@@ -3,6 +3,12 @@ import { useMemo, useState } from "react";
 import GameImage from "./GameImage";
 import Fab from "./ui/Fab";
 import { VOTE_STATUS } from "../constants/workflow";
+import {
+  DEFAULT_AVATAR_ID,
+  avatarById,
+  avatarIconById,
+  isValidAvatarId,
+} from "../constants/avatars";
 
 function VoteTile({
   game,
@@ -287,6 +293,7 @@ function VotingPanelInner({
   onSaveSessionPlay,
   isSavingSessionPlay,
   sessionHistory,
+  memberProfilesById = {},
   showArchiveHistory = true,
 
   canEmailSession,
@@ -470,6 +477,21 @@ function VotingPanelInner({
       memberDisplayName(a).localeCompare(memberDisplayName(b))
     );
   }, [members]);
+
+  const memberAvatarFor = (member) => {
+    const userId = String(member?.userId || "").trim();
+    const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
+    const avatarId = isValidAvatarId(profileAvatarId)
+      ? profileAvatarId
+      : (isValidAvatarId(member?.avatarId) ? member.avatarId : DEFAULT_AVATAR_ID);
+    const avatar = avatarById(avatarId);
+
+    return {
+      src: avatar?.src || null,
+      icon: avatar?.icon || avatarIconById(avatarId),
+      label: avatar?.label || "Avatar",
+    };
+  };
 
   const initialHistoryPlayedDate = status === VOTE_STATUS.CLOSED
     ? toDateInputValue(
@@ -983,15 +1005,29 @@ function VotingPanelInner({
                         const selectedPlacement = historyPlacements.find(
                           (entry) => entry.userId === member.userId
                         );
+                        const avatar = memberAvatarFor(member);
 
                         return (
                           <div
                             key={member.userId}
                             className="flex items-center justify-between gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0"
                           >
-                            <span className="text-sm text-neutral-300 min-w-0 truncate">
-                              {memberDisplayName(member, member.userId)}
-                            </span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-xs shrink-0">
+                                {avatar.src ? (
+                                  <img
+                                    src={avatar.src}
+                                    alt={avatar.label}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  avatar.icon
+                                )}
+                              </span>
+                              <span className="text-sm text-neutral-300 min-w-0 truncate">
+                                {memberDisplayName(member, member.userId)}
+                              </span>
+                            </div>
 
                             <select
                               className="text-sm"
@@ -1033,6 +1069,7 @@ function VotingPanelInner({
                         const checked = historyPlacements.some(
                           (entry) => entry.userId === member.userId
                         );
+                        const avatar = memberAvatarFor(member);
 
                         return (
                           <label
@@ -1046,7 +1083,20 @@ function VotingPanelInner({
                               onChange={() => toggleCoopWinner(member.userId)}
                             />
                             <span className="block flex-1 min-w-0 break-words text-sm text-neutral-300">
-                              {memberDisplayName(member, member.userId)}
+                              <span className="inline-flex items-center gap-2 min-w-0">
+                                <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-xs shrink-0">
+                                  {avatar.src ? (
+                                    <img
+                                      src={avatar.src}
+                                      alt={avatar.label}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    avatar.icon
+                                  )}
+                                </span>
+                                <span className="min-w-0 truncate">{memberDisplayName(member, member.userId)}</span>
+                              </span>
                             </span>
                           </label>
                         );

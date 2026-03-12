@@ -2,11 +2,13 @@
 import { useMemo, useState } from "react";
 import GameTile from "./GameTile";
 import { GROUP_TAB, POOL_FILTER } from "../constants/workflow";
+import { normalizeGameTags } from "../utils/gameTags";
 
 export default function GroupDetail({
   group,
   groupTab,
   setGroupTab,
+  groupSettings,
   onBack,
   onLeaveGroup,
   groupGames,
@@ -29,23 +31,36 @@ export default function GroupDetail({
   const [manageBusyId, setManageBusyId] = useState(null);
   const [manageQuery, setManageQuery] = useState("");
 
+  const hiddenTagSet = useMemo(() => {
+    return new Set(normalizeGameTags(groupSettings?.hiddenTags));
+  }, [groupSettings?.hiddenTags]);
+
+  const collectionVisibleGames = useMemo(() => {
+    if (!hiddenTagSet.size) return groupGames || [];
+
+    return (groupGames || []).filter((game) => {
+      const tags = normalizeGameTags(game.tags);
+      return !tags.some((tag) => hiddenTagSet.has(tag));
+    });
+  }, [groupGames, hiddenTagSet]);
+
   const poolCounts = useMemo(() => {
-    const inPool = (groupGames || []).filter((g) => !!g.isActiveInPool).length;
-    const total = (groupGames || []).length;
+    const inPool = collectionVisibleGames.filter((g) => !!g.isActiveInPool).length;
+    const total = collectionVisibleGames.length;
     return { inPool, outPool: Math.max(0, total - inPool), total };
-  }, [groupGames]);
+  }, [collectionVisibleGames]);
 
   const filteredGames = useMemo(() => {
-    const arr = groupGames || [];
+    const arr = collectionVisibleGames;
     if (poolFilter === POOL_FILTER.IN_POOL) return arr.filter((g) => !!g.isActiveInPool);
     if (poolFilter === POOL_FILTER.OUT_OF_POOL) return arr.filter((g) => !g.isActiveInPool);
     return arr;
-  }, [groupGames, poolFilter]);
+  }, [collectionVisibleGames, poolFilter]);
 
   return (
     <div className="space-y-4">
-      <div className="ui-surface p-4 md:p-5 space-y-4">
-        <div className="flex items-start justify-between gap-4">
+      <div className="ui-surface p-4 md:p-5 space-y-5 md:space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-4">
           <div className="min-w-0">
             <button
               className="ui-btn-ghost px-3 py-1.5 text-xs"
@@ -55,14 +70,14 @@ export default function GroupDetail({
               ← Back to groups
             </button>
 
-            <h2 className="text-2xl md:text-3xl font-bold mt-3 truncate text-white">
+            <h2 className="text-2xl md:text-3xl font-bold mt-2 md:mt-3 truncate text-white">
               {group?.name || "Group"}
             </h2>
 
-            <p className="text-sm text-neutral-400 mt-1">Your shared group for collection, sessions, and group decisions.</p>
+            <p className="text-sm text-neutral-400 mt-1.5">Your shared group for collection, sessions, and group decisions.</p>
 
             {groupId && (
-              <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2">
+              <div className="mt-3 flex w-full flex-wrap items-center gap-2 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2 md:inline-flex md:w-auto">
                 <span className="text-xs uppercase tracking-wider text-neutral-500">Invite</span>
                 <code className="px-2 py-1 text-xs bg-neutral-800 border border-neutral-700 rounded font-mono text-gray-300">
                   {groupId}
@@ -83,7 +98,7 @@ export default function GroupDetail({
 
           {groupId && onLeaveGroup && (
             <button
-              className="ui-btn-danger px-3 py-1.5 text-xs shrink-0"
+              className="ui-btn-danger px-3 py-1.5 text-xs shrink-0 self-start"
               type="button"
               onClick={() => onLeaveGroup(groupId)}
             >
@@ -92,11 +107,11 @@ export default function GroupDetail({
           )}
         </div>
 
-        <div className="ui-segmented">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2">
           <button
             className={`ui-segment ${
               groupTab === GROUP_TAB.COLLECTION ? "ui-pill-active" : "ui-pill-inactive"
-            }`}
+            } w-full justify-center sm:w-auto`}
             onClick={() => setGroupTab(GROUP_TAB.COLLECTION)}
             type="button"
           >
@@ -105,7 +120,7 @@ export default function GroupDetail({
           <button
             className={`ui-segment ${
               groupTab === GROUP_TAB.VOTING ? "ui-pill-active" : "ui-pill-inactive"
-            }`}
+            } w-full justify-center sm:w-auto`}
             onClick={() => setGroupTab(GROUP_TAB.VOTING)}
             type="button"
           >
@@ -114,7 +129,7 @@ export default function GroupDetail({
           <button
             className={`ui-segment ${
               groupTab === GROUP_TAB.HISTORY ? "ui-pill-active" : "ui-pill-inactive"
-            }`}
+            } w-full justify-center sm:w-auto`}
             onClick={() => setGroupTab(GROUP_TAB.HISTORY)}
             type="button"
           >
@@ -124,7 +139,7 @@ export default function GroupDetail({
             <button
               className={`ui-segment ${
                 groupTab === GROUP_TAB.SETTINGS ? "ui-pill-active" : "ui-pill-inactive"
-              }`}
+              } w-full justify-center sm:w-auto`}
               onClick={() => setGroupTab(GROUP_TAB.SETTINGS)}
               type="button"
             >

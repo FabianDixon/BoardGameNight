@@ -7,6 +7,12 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
+import {
+  DEFAULT_AVATARS,
+  DEFAULT_AVATAR_ID,
+  avatarById,
+  avatarIconById,
+} from "../constants/avatars";
 
 export default function ProfileCard({
   user,
@@ -14,6 +20,7 @@ export default function ProfileCard({
   nickname,
   setNickname,
   onSaveNickname,
+  onSaveAvatarId,
 }) {
   const auth = useMemo(() => getAuth(), []);
 
@@ -22,11 +29,16 @@ export default function ProfileCard({
   const [mode, setMode] = useState(defaultMode); // "link" | "signin"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" }); // type: "success" | "error" | "info"
 
   const isAnonymous = !!user?.isAnonymous;
+  const selectedAvatarId = profile?.avatarId || DEFAULT_AVATAR_ID;
+  const selectedAvatar = avatarById(selectedAvatarId);
+  const selectedAvatarIcon = avatarIconById(selectedAvatarId);
+  const selectedAvatarSrc = selectedAvatar?.src || null;
 
   function setError(text) {
     setMsg({ type: "error", text });
@@ -113,7 +125,7 @@ export default function ProfileCard({
     try {
       await signOut(auth);
       setSuccess("Signed out.");
-    } catch (err) {
+    } catch {
       setError("Sign out failed.");
     } finally {
       setBusy(false);
@@ -121,156 +133,299 @@ export default function ProfileCard({
   }
 
   return (
-    <div className="bg-neutral-800 p-4 rounded-2xl shadow border border-neutral-700">
-      <h2 className="text-xl font-semibold mb-3 text-white">Profile</h2>
-
-      {!user ? (
-        <p className="text-sm text-gray-300">Signing in…</p>
-      ) : !profile ? (
-        <p className="text-sm text-gray-300">Loading profile…</p>
-      ) : (
-        <>
-          {/* Nickname */}
-          <p className="text-sm text-gray-300 mb-2">
-            Current nickname:{" "}
-            <span className="font-semibold">
-              {profile.nickname || "(no nickname yet)"}
-            </span>
-          </p>
-
-          <div className="mb-4">
-            <input
-              className="border border-neutral-700 p-2 rounded w-full mb-2 bg-neutral-900 text-white placeholder-gray-400"
-              placeholder="Enter nickname"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-            />
-            <button
-              className="bg-blue-600 text-white px-4 py-2 rounded"
-              onClick={onSaveNickname}
-              disabled={!nickname.trim()}
-              title={!nickname.trim() ? "Enter a nickname first" : ""}
-            >
-              Save nickname
-            </button>
-          </div>
-
-          <hr className="my-4 border-neutral-700" />
-
-          {/* Account section */}
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold text-white">Account</h3>
-
-            {!isAnonymous && (
-              <button
-                className="text-sm text-red-400 hover:underline"
-                onClick={handleSignOut}
-                disabled={busy}
-              >
-                Sign out
-              </button>
+    <div className="space-y-4 pt-2 md:pt-3">
+      <div className="ui-surface p-5 md:p-6">
+        <div className="flex items-start gap-4">
+          <div className="h-16 w-16 overflow-hidden rounded-2xl border border-neutral-600 bg-neutral-900 flex items-center justify-center text-2xl">
+            {selectedAvatarSrc ? (
+              <img
+                src={selectedAvatarSrc}
+                alt={selectedAvatar?.label || "Selected avatar"}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              selectedAvatarIcon
             )}
           </div>
 
-          {!isAnonymous ? (
-            <p className="text-sm text-gray-300">
-              Your account is secured.
-              {user.email ? (
-                <>
-                  {" "}
-                  Signed in as <span className="font-semibold">{user.email}</span>.
-                </>
-              ) : null}
-            </p>
-          ) : (
-            <>
-              <p className="text-sm text-gray-300 mb-3">
-                You’re using a temporary account. Save it so you can sign in again on other devices.
-              </p>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-2xl md:text-3xl font-bold text-white">Profile</h2>
 
-              {/* Mode toggle */}
-              <div className="flex gap-2 mb-3">
-                <button
-                  className={`px-3 py-2 rounded border border-neutral-700 text-white ${
-                    mode === "link" ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
-                  }`}
-                  onClick={() => {
-                    clearMsg();
-                    setMode("link");
-                  }}
-                  disabled={busy}
-                >
-                  Create account
-                </button>
+            {!user ? (
+              <p className="mt-2 text-sm text-neutral-400">Signing in…</p>
+            ) : !profile ? (
+              <p className="mt-2 text-sm text-neutral-400">Loading profile…</p>
+            ) : (
+              <div className="mt-2">
+                <p className="text-xs uppercase tracking-wide text-neutral-500">Current nickname</p>
+                <p className="text-lg font-semibold text-white truncate">
+                  {profile.nickname || "No nickname set"}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">Default avatar selected</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
+      {user && profile && (
+        <>
+          <div className="ui-surface p-5 md:p-6 space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-white">Identity</h3>
+              <p className="text-sm text-neutral-400 mt-1">Choose the nickname shown across your game nights.</p>
+            </div>
+
+            <div className="ui-surface-subtle p-4 space-y-3">
+              <label className="ui-field-label">Nickname</label>
+              <input
+                className="w-full py-2.5"
+                placeholder="Enter nickname"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+              />
+
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-neutral-400 min-w-0 truncate">
+                  Current: <span className="font-semibold text-neutral-200">{profile.nickname || "(no nickname yet)"}</span>
+                </p>
                 <button
-                  className={`px-3 py-2 rounded border border-neutral-700 text-white ${
-                    mode === "signin" ? "bg-neutral-700" : "bg-neutral-900 hover:bg-neutral-800"
-                  }`}
-                  onClick={() => {
-                    clearMsg();
-                    setMode("signin");
-                  }}
-                  disabled={busy}
+                  className="ui-btn-primary text-sm"
+                  onClick={onSaveNickname}
+                  disabled={!nickname.trim()}
+                  title={!nickname.trim() ? "Enter a nickname first" : ""}
                 >
-                  Sign in
+                  Save nickname
                 </button>
               </div>
+            </div>
 
-              {/* Inputs */}
-              <input
-                className="border border-neutral-700 p-2 rounded w-full mb-2 bg-neutral-900 text-white placeholder-gray-400"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-                disabled={busy}
-              />
+            <div className="ui-surface-subtle p-4 space-y-3">
+              <div>
+                <label className="ui-field-label">Avatar</label>
+                <p className="ui-field-hint">Choose from default avatars.</p>
+              </div>
 
-              <input
-                className="border border-neutral-700 p-2 rounded w-full mb-2 bg-neutral-900 text-white placeholder-gray-400"
-                placeholder={mode === "signin" ? "Password" : "Password (min 6 chars)"}
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                disabled={busy}
-              />
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-11 w-11 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-800 flex items-center justify-center text-2xl shrink-0">
+                    {selectedAvatarSrc ? (
+                      <img
+                        src={selectedAvatarSrc}
+                        alt={selectedAvatar?.label || "Selected avatar"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      selectedAvatarIcon
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-white truncate">
+                      {selectedAvatar?.label || "Default avatar"}
+                    </div>
+                    <div className="text-xs text-neutral-400">{selectedAvatarId}</div>
+                  </div>
+                </div>
 
-              {msg.text && (
-                <p
-                  className={`text-sm mb-2 ${
-                    msg.type === "error"
-                      ? "text-red-400"
-                      : msg.type === "success"
-                      ? "text-green-400"
-                      : "text-gray-300"
-                  }`}
+                <button
+                  type="button"
+                  className="ui-btn-secondary text-xs px-3 py-1.5"
+                  onClick={() => setAvatarPickerOpen(true)}
                 >
-                  {msg.text}
+                  Change avatar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="ui-surface p-5 md:p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Account</h3>
+                <p className="text-sm text-neutral-400 mt-1">Manage how you sign in and secure this profile.</p>
+              </div>
+
+              {!isAnonymous && (
+                <button
+                  className="ui-btn-danger text-xs"
+                  onClick={handleSignOut}
+                  disabled={busy}
+                >
+                  Sign out
+                </button>
+              )}
+            </div>
+
+            {!isAnonymous ? (
+              <div className="ui-surface-subtle p-4">
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <span className="ui-chip-green">Secured account</span>
+                </div>
+                <p className="text-sm text-neutral-300">
+                  Your account is secured.
+                  {user.email ? (
+                    <>
+                      {" "}
+                      Signed in as <span className="font-semibold text-white">{user.email}</span>.
+                    </>
+                  ) : null}
                 </p>
-              )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="ui-surface-subtle p-4">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className="ui-chip-yellow">Temporary account</span>
+                  </div>
+                  <p className="text-sm text-neutral-300">
+                    You’re using a temporary account. Save it so you can sign in again on other devices.
+                  </p>
+                </div>
 
-              {mode === "link" ? (
-                <button
-                  className="bg-gray-900 text-white px-4 py-2 rounded"
-                  onClick={handleLinkEmailPassword}
-                  disabled={busy}
-                >
-                  {busy ? "Saving…" : "Create"}
-                </button>
-              ) : (
-                <button
-                  className="bg-gray-900 text-white px-4 py-2 rounded"
-                  onClick={handleSignIn}
-                  disabled={busy}
-                >
-                  {busy ? "Signing in…" : "Sign in"}
-                </button>
-              )}
-            </>
-          )}
+                <div className="ui-surface-subtle p-4 space-y-3">
+                  <div className="ui-segmented">
+                    <button
+                      className={`ui-segment ${mode === "link" ? "ui-pill-active" : "ui-pill-inactive"}`}
+                      onClick={() => {
+                        clearMsg();
+                        setMode("link");
+                      }}
+                      disabled={busy}
+                    >
+                      Create account
+                    </button>
+
+                    <button
+                      className={`ui-segment ${mode === "signin" ? "ui-pill-active" : "ui-pill-inactive"}`}
+                      onClick={() => {
+                        clearMsg();
+                        setMode("signin");
+                      }}
+                      disabled={busy}
+                    >
+                      Sign in
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <input
+                      className="py-2.5"
+                      placeholder="Email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="email"
+                      disabled={busy}
+                    />
+
+                    <input
+                      className="py-2.5"
+                      placeholder={mode === "signin" ? "Password" : "Password (min 6 chars)"}
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                      disabled={busy}
+                    />
+                  </div>
+
+                  {msg.text && (
+                    <p
+                      className={`text-sm ${
+                        msg.type === "error"
+                          ? "text-red-400"
+                          : msg.type === "success"
+                          ? "text-emerald-300"
+                          : "text-neutral-300"
+                      }`}
+                    >
+                      {msg.text}
+                    </p>
+                  )}
+
+                  {mode === "link" ? (
+                    <button
+                      className="ui-btn-primary px-3 py-1.5 text-sm"
+                      onClick={handleLinkEmailPassword}
+                      disabled={busy}
+                    >
+                      {busy ? "Saving…" : "Create"}
+                    </button>
+                  ) : (
+                    <button
+                      className="ui-btn-primary px-3 py-1.5 text-sm"
+                      onClick={handleSignIn}
+                      disabled={busy}
+                    >
+                      {busy ? "Signing in…" : "Sign in"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </>
+      )}
+
+      {avatarPickerOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="ui-modal-backdrop"
+            onClick={() => setAvatarPickerOpen(false)}
+            aria-hidden="true"
+          />
+
+          <div className="ui-modal-shell max-w-md">
+            <div className="ui-modal-header">
+              <h3 className="text-lg font-semibold text-white">Choose avatar</h3>
+              <button
+                type="button"
+                className="ui-btn-secondary px-3 py-1 text-xs"
+                onClick={() => setAvatarPickerOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="ui-modal-body">
+              <div className="grid grid-cols-5 gap-2">
+                {DEFAULT_AVATARS.map((avatar) => {
+                  const selected = avatar.id === selectedAvatarId;
+                  return (
+                    <button
+                      key={avatar.id}
+                      type="button"
+                      className={[
+                        "h-12 overflow-hidden rounded-xl border text-xl transition",
+                        selected
+                          ? "border-blue-500 bg-blue-500/20"
+                          : "border-neutral-700 bg-neutral-900 hover:bg-neutral-800",
+                      ].join(" ")}
+                      onClick={() => {
+                        onSaveAvatarId?.(avatar.id);
+                        setAvatarPickerOpen(false);
+                      }}
+                      title={avatar.label || avatar.id}
+                    >
+                      {avatar.src ? (
+                        <img
+                          src={avatar.src}
+                          alt={avatar.label || avatar.id}
+                          className="h-full w-full object-contain p-1"
+                        />
+                      ) : (
+                        avatar.icon
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
