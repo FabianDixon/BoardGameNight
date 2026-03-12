@@ -121,6 +121,11 @@ Recent work has included:
 	•	listener gating / server-sync timing concerns
 	•	improving “Manage My Games” discoverability and UX
 	•	moving toward safer incremental changes in App.jsx
+	•	the first complete UI/UX overhaul pass across the major top-level screens
+	•	migration of the main app shell to mobile-first bottom navigation with responsive desktop shell treatment
+	•	profile avatar selection using bundled default avatars and future-ready avatar asset support
+	•	group-level tag rules for hiding tagged games from Group Collection
+	•	surfacing avatars in session results and history presentation
 
 A recurring theme is that the app functionally works, but parts of the code have likely become too centralized or too intertwined, especially in top-level orchestration logic.
 
@@ -129,23 +134,22 @@ A recurring theme is that the app functionally works, but parts of the code have
 Current Product Priorities
 
 The roadmap priority order is:
-1. Focused feature and bug tickets on top of the stabilized codebase
-2. Targeted product improvements identified by product/design discussions
-3. Major UI refresh / polish pass
+1. Focused feature work on top of the stabilized and overhauled codebase
+2. Analytics/statistics design and implementation
+3. Product-release readiness work (permissions, storage/media, deployment readiness, polish)
 4. Future scaling and monetization-oriented improvements
 
-Important: the project is no longer primarily in a cleanup-first phase. The current priority is to build on the now-stabilized foundation with focused feature work and bug fixes before the major UI overhaul.
+Important: the project is no longer primarily in a cleanup-first phase. The current priority is to build on the now-stabilized and overhauled foundation with focused feature work, analytics, and release-readiness follow-up.
 
 ⸻
 
 Known Product Direction
 
 After the audit, the plan is to continue with:
-	•	specific bug fixes
-	•	specific features already identified outside this document
-	•	a major UI update / polish pass
-
-This means technical changes now should support future UI work rather than make it harder.
+	•	specific bug fixes and small post-overhaul polish
+	•	analytics/statistics feature planning and implementation
+	•	product-release readiness work
+	•	later monetization/business-model exploration once the product shape is stable
 
 ⸻
 
@@ -169,58 +173,72 @@ Completed work includes:
 	•	landing-page sign-in flow fix so the initial sign-in path now routes correctly into the working authentication flow
 	•	introduction of the first session-history / played-session tracking foundation using persisted play records keyed by vote/session
 	•	creation of a local firestore.rules source of truth in the repo and wiring it into Firebase project configuration
+	•	completion of a major UI/UX overhaul pass across the app shell and major user-facing screens
+	•	bottom navigation for mobile plus desktop-specific shell treatment
+	•	overhaul of Library, My Collection, Game Detail, Groups, Group Detail shell, Voting, History, and Profile presentation
+	•	addition of a dedicated History tab in Group Detail and cleanup of duplicated history/archive presentation
+	•	profile avatar support using bundled default avatars with modal-based selection
+	•	first version of group-level tag rules via hidden tags in Group Collection
+	•	avatar usage in session results and history displays
 
 The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
 
 ⸻
 
-Current Product Roadmap Before UI/UX Overhaul
+Current Product Roadmap After UI/UX Overhaul
 
 Before starting a major UI/UX redesign, the next planned work is:
 
-1. Submission Phase Improvement
-	•	This has now been implemented as an explicit submission-state during the collecting phase.
-	•	Users can choose “No Submission” and still count toward auto-advance.
-	•	Users can also change between a real submission and “No Submission” before voting opens.
-	•	Any remaining follow-up work here should be treated as small UX polish rather than a missing core feature.
+1. Analytics / Statistics
+	•	This is now the highest-priority major product feature track.
+	•	Planned first focus is group-facing statistics built from the existing session-history foundation.
+	•	Likely early metrics include:
+		•	total sessions played
+		•	most played games
+		•	most selected / winning games
+		•	player win counts / placements
+		•	co-op win/loss outcomes
+		•	tag-based insights later once the core analytics layer exists
+	•	Profile/user-facing statistics may follow after group statistics are established.
 
-2. Landing Page Sign-In Bug Fix
-	•	This has now been fixed so the landing-page sign-in path enters the same working authentication flow used elsewhere in the app.
-	•	Any remaining work here should be limited to minor auth UX polish or regression testing.
+2. Group-Level Rules / Permissions Follow-Up
+	•	Group hidden-tag rules have now been implemented in a first version.
+	•	A likely follow-up is tightening permissions around session-history/result editing so this is limited to owner + moderator roles rather than broad member access.
+	•	Any permissions work here should be treated as focused post-overhaul product hardening.
 
-3. Session History / Played Session Tracking
-	•	A first foundation patch has now been implemented using persisted play/session records per completed vote.
-	•	The current foundation includes:
-		•	automatically logging the selected winner game
-		•	allowing additional played games to be recorded
-		•	allowing the played date to be recorded
-	•	The next planned work in this area is:
-		•	read-only history browsing/listing for past sessions
-		•	medals / placements with support for ties, cooperative outcomes, or no winner
-		•	future scoreboards and statistics built on top of the stored session data
+3. Identity / Media Follow-Up
+	•	Profile avatars have now been implemented using bundled default avatar assets.
+	•	Likely future follow-up work includes:
+		•	group imagery/banners
+		•	expanded avatar pack / art direction cleanup
+		•	image/media storage decisions for a more productized release
+	•	This should remain lightweight until launch direction is clearer.
 
-4. Game Labels / Tags
-	•	Add labels/tags to games so they can be filtered across the app.
-	•	This should later support:
-		•	filtering in multiple screens
-		•	group-specific hiding or preference rules
-		•	future statistics by tag/category
+4. Release Readiness
+	•	The next non-feature planning phase should focus on what is required for an actual product release.
+	•	This likely includes:
+		•	light regression testing across the overhauled flows
+		•	permissions review
+		•	storage/media decisions
+		•	deployment/store-readiness planning
+		•	small post-overhaul polish fixes
 
-These items should generally be approached before the UI overhaul so that the redesign can account for the real product shape rather than forcing these features in later.
+5. Mobile-App Readiness
+	•	The app now has a stronger mobile-first shell and is a realistic candidate for later wrapping as a mobile app.
+	•	Current expectation is to continue polishing the web app first, then evaluate Capacitor-based mobile packaging later.
+	•	This is considered viable, but is not yet the immediate implementation priority.
 
 ⸻
 
 Current Development Strategy
 
 The preferred sequence is now:
-	1.	finish the current pre-UI feature set, especially session-history follow-up work and game labels/tags
-	2.	confirm stability with light regression testing
-	3.	establish the styling foundation needed for the UI/UX overhaul
-	4.	plan the UI/UX overhaul using the updated feature set and data model
+	1.	close any remaining small post-overhaul polish issues
+	2.	run light regression testing on the overhauled app flows
+	3.	design and implement the first analytics/statistics features
+	4.	review release-readiness gaps before launch-oriented work
 
-The project is no longer primarily in a “cleanup first” phase. Remaining technical cleanup should be driven by concrete upcoming work rather than general architectural ambition.
-
-One important current consideration is the styling foundation for the upcoming overhaul. Recent work strongly suggests the project has been using Tailwind-style utility classes without a fully working Tailwind pipeline. Before major UI redesign work begins, the styling/tooling setup should be confirmed and corrected so visual changes behave predictably.
+The styling/tooling foundation has now been established well enough to support the completed overhaul pass, but future contributors should still prefer extending the shared design-system primitives rather than reintroducing ad hoc one-off styling.
 
 ⸻
 
@@ -267,9 +285,10 @@ Note:
 Current Known Follow-Up Items
 
 The highest-value near-term follow-up items are now:
-	•	complete the next session-history patches, especially read-only history browsing and later medals/placements
-	•	implement game labels/tags
-	•	confirm and, if necessary, fix the styling foundation (including Tailwind/tooling setup) before the UI overhaul
-	•	run light regression testing on the recently completed collecting-phase, auth-entry, and session-history flows
+	•	run a light regression/testing pass across the newly overhauled app flows
+	•	design and implement the first analytics/statistics surfaces, starting with group statistics
+	•	review and tighten permissions around session-history/result editing if needed
+	•	continue small post-overhaul polish fixes only when they are concrete and high-value
+	•	prepare a release-readiness checklist covering media, deployment, permissions, and launch needs
 
-These should be treated as the bridge between the stabilization/product-foundation phase and the later UI/UX overhaul.
+These should be treated as the bridge between the completed overhaul phase and the next product-maturity phase (analytics, permissions hardening, release readiness, and later monetization exploration).
