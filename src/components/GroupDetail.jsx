@@ -16,6 +16,7 @@ export default function GroupDetail({
   onToast,
   votingNode, 
   historyNode,
+  toolsNode,
   settingsNode,
   canEditNewness,
   onTogglePlayedOverride,
@@ -134,6 +135,15 @@ export default function GroupDetail({
             type="button"
           >
             History
+          </button>
+          <button
+            className={`ui-segment ${
+              groupTab === GROUP_TAB.TOOLS ? "ui-pill-active" : "ui-pill-inactive"
+            } w-full justify-center sm:w-auto`}
+            onClick={() => setGroupTab(GROUP_TAB.TOOLS)}
+            type="button"
+          >
+            Tools
           </button>
           {settingsNode && (
             <button
@@ -338,6 +348,13 @@ export default function GroupDetail({
         historyNode || (
           <div className="ui-surface p-4">
             <p className="text-sm text-neutral-300">No history available yet.</p>
+          </div>
+        )
+      )}
+      {groupTab === GROUP_TAB.TOOLS && (
+        toolsNode || (
+          <div className="ui-surface p-4">
+            <p className="text-sm text-neutral-300">No tools available yet.</p>
           </div>
         )
       )}

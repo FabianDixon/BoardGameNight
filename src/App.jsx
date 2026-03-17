@@ -40,6 +40,7 @@ import GameDetail from "./components/GameDetail";
 import GroupDetail from "./components/GroupDetail";
 import GroupsPanel from "./components/GroupsPanel";
 import VotingPanel from "./components/VotingPanel";
+import GroupToolsPanel from "./components/GroupToolsPanel";
 import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
@@ -2570,7 +2571,7 @@ export default function App() {
 
                         {sessionHistory && sessionHistory.length > 0 ? (
                           <div className="space-y-3 px-4 md:px-0">
-                            {sessionHistory.map((play, idx) => {
+                            {sessionHistory.map((play) => {
                               const title = play?.winnerGameId
                                 ? (games.find((g) => g.id === play.winnerGameId)?.title || play.winnerGameId)
                                 : "No winner";
@@ -2790,6 +2791,9 @@ export default function App() {
                           </div>
                         )}
                       </div>
+                    )}
+                    toolsNode={(
+                      <GroupToolsPanel members={members} />
                     )}
                     canEditNewness={user?.uid === currentGroup?.ownerId}
                     onTogglePlayedOverride={togglePlayedOverride}
