@@ -1,4 +1,10 @@
 import { useMemo, useState } from "react";
+import {
+  DEFAULT_AVATAR_ID,
+  avatarById,
+  avatarIconById,
+  isValidAvatarId,
+} from "../constants/avatars";
 
 function shuffle(array) {
   const next = [...array];
@@ -20,13 +26,20 @@ function displayNameForMember(member) {
   return `${userId.slice(0, 6)}…${userId.slice(-4)}`;
 }
 
-export default function SeatRandomizerTool({ members }) {
+export default function SeatRandomizerTool({ members, memberProfilesById }) {
   const participants = useMemo(() => {
     return (members || []).map((member) => ({
       id: String(member?.userId || "").trim(),
       label: displayNameForMember(member),
+      avatarId: (() => {
+        const userId = String(member?.userId || "").trim();
+        const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
+        if (isValidAvatarId(profileAvatarId)) return profileAvatarId;
+        if (isValidAvatarId(member?.avatarId)) return member.avatarId;
+        return DEFAULT_AVATAR_ID;
+      })(),
     })).filter((participant) => participant.id);
-  }, [members]);
+  }, [members, memberProfilesById]);
 
   const [excludedIds, setExcludedIds] = useState(() => new Set());
   const [seatOrder, setSeatOrder] = useState([]);
@@ -39,6 +52,19 @@ export default function SeatRandomizerTool({ members }) {
   const labelById = useMemo(() => {
     const map = new Map();
     for (const participant of participants) map.set(participant.id, participant.label);
+    return map;
+  }, [participants]);
+
+  const avatarByIdMap = useMemo(() => {
+    const map = new Map();
+    for (const participant of participants) {
+      const avatar = avatarById(participant.avatarId);
+      map.set(participant.id, {
+        src: avatar?.src || null,
+        icon: avatar?.icon || avatarIconById(participant.avatarId),
+        label: avatar?.label || "Avatar",
+      });
+    }
     return map;
   }, [participants]);
 
@@ -78,7 +104,20 @@ export default function SeatRandomizerTool({ members }) {
                     key={participant.id}
                     className="flex items-center justify-between gap-3 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2"
                   >
-                    <span className="text-sm text-neutral-100 truncate">{participant.label}</span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px] shrink-0">
+                        {avatarByIdMap.get(participant.id)?.src ? (
+                          <img
+                            src={avatarByIdMap.get(participant.id).src}
+                            alt={avatarByIdMap.get(participant.id).label}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          avatarByIdMap.get(participant.id)?.icon || "🎲"
+                        )}
+                      </span>
+                      <span className="text-sm text-neutral-100 truncate">{participant.label}</span>
+                    </div>
                     <button
                       type="button"
                       className={`ui-pill text-xs whitespace-nowrap ${
@@ -131,9 +170,18 @@ export default function SeatRandomizerTool({ members }) {
                     className="flex items-center gap-3 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2"
                   >
                     <span className="ui-chip-muted min-w-8 justify-center">{index + 1}</span>
-                    <span className="text-sm text-neutral-100 truncate">
-                      {labelById.get(participantId) || participantId}
+                    <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px] shrink-0">
+                      {avatarByIdMap.get(participantId)?.src ? (
+                        <img
+                          src={avatarByIdMap.get(participantId).src}
+                          alt={avatarByIdMap.get(participantId).label}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        avatarByIdMap.get(participantId)?.icon || "🎲"
+                      )}
                     </span>
+                    <span className="text-sm text-neutral-100 truncate">{labelById.get(participantId) || participantId}</span>
                   </li>
                 ))}
               </ol>

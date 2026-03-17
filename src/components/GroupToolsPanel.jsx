@@ -1,6 +1,6 @@
 import SeatRandomizerTool from "./SeatRandomizerTool";
 
-export default function GroupToolsPanel({ members }) {
+export default function GroupToolsPanel({ members, memberProfilesById }) {
   return (
     <div className="space-y-4">
       <div className="ui-surface p-5 md:p-6">
@@ -12,7 +12,10 @@ export default function GroupToolsPanel({ members }) {
         </div>
       </div>
 
-      <SeatRandomizerTool members={members} />
+      <SeatRandomizerTool
+        members={members}
+        memberProfilesById={memberProfilesById}
+      />
     </div>
   );
 }

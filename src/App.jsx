@@ -2793,7 +2793,10 @@ export default function App() {
                       </div>
                     )}
                     toolsNode={(
-                      <GroupToolsPanel members={members} />
+                      <GroupToolsPanel
+                        members={members}
+                        memberProfilesById={memberProfilesById}
+                      />
                     )}
                     canEditNewness={user?.uid === currentGroup?.ownerId}
                     onTogglePlayedOverride={togglePlayedOverride}
