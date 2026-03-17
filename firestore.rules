@@ -391,8 +391,10 @@ match /groups/{groupId}/plays/{playId} {
     && isValidPlayRecordShape()
     && request.resource.data.groupId == resource.data.groupId
     && request.resource.data.voteId == resource.data.voteId
-    && request.resource.data.createdBy == resource.data.createdBy
-    && request.resource.data.createdAt == resource.data.createdAt;
+    // Allow backfilling createdBy/createdAt on old docs that pre-date these fields.
+    // Once non-null they become immutable on subsequent writes.
+    && (resource.data.createdBy == null || request.resource.data.createdBy == resource.data.createdBy)
+    && (resource.data.createdAt == null || request.resource.data.createdAt == resource.data.createdAt);
 
   allow delete: if false;
 }

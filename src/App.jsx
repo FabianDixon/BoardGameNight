@@ -43,6 +43,7 @@ import VotingPanel from "./components/VotingPanel";
 import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
+import PastSessionEditModal from "./components/PastSessionEditModal";
 import { buildSessionMailto, copyJsonToClipboard } from "./utils/emailExport";
 import GameTagsField from "./components/GameTagsField";
 import GameTagFilter from "./components/GameTagFilter";
@@ -203,6 +204,9 @@ export default function App() {
   const [winnerModal, setWinnerModal] = useState(null);
   const [sessionPlayRecord, setSessionPlayRecord] = useState(null);
   const [isSavingSessionPlay, setIsSavingSessionPlay] = useState(false);
+
+  const [editingPastPlay, setEditingPastPlay] = useState(null);
+  const [isSavingPastPlay, setIsSavingPastPlay] = useState(false);
 
   const poolDocs = useGroupPool(currentGroupId, groupAccessReady);
   const mySubmissionGameId = useMySubmission(user?.uid, currentGroupId, activeVote?.id, groupAccessReady);
@@ -607,6 +611,13 @@ export default function App() {
     return !!user && currentGroup?.ownerId === user.uid;
   }, [user, currentGroup]);
 
+  // Who can edit past session play records: group owner or moderator
+  const canEditPastSession = useMemo(() => {
+    if (!user || !currentGroupId) return false;
+    if (currentGroup?.ownerId === user.uid) return true;
+    return myRole === "moderator";
+  }, [user, currentGroupId, currentGroup, myRole]);
+
   const voteResults = useMemo(() => {
     if (!activeVote || activeVote.status !== VOTE_STATUS.CLOSED) return [];
 
@@ -812,6 +823,67 @@ export default function App() {
     sessionPlayRecord,
     showToast,
   ]);
+
+  // Save an edit to a past session play record.
+  // Preserves immutable fields (voteId, createdBy, createdAt, sessionIndex)
+  // while allowing date, winner, additional games, result mode, and placements
+  // to be updated.
+  const savePastSessionPlay = useCallback(
+    async (playRecord, { playedAt, winnerGameId, playedGameIds, resultMode, placements }) => {
+      if (!user || !currentGroupId || !playRecord?.id) return;
+
+      if (!canEditPastSession) {
+        showToast("Only the group owner or a moderator can edit session history.", "error");
+        return;
+      }
+
+      const now = Date.now();
+      const effectiveWinnerId =
+        typeof winnerGameId === "string" && winnerGameId.trim()
+          ? winnerGameId.trim()
+          : null;
+      const normalizedResultMode = normalizeResultMode(
+        resultMode,
+        defaultResultMode(effectiveWinnerId)
+      );
+      const normalizedPlayedGameIds = normalizePlayedGameIds(
+        playedGameIds,
+        effectiveWinnerId
+      );
+      const normalizedPlacements = normalizePlacements(placements, normalizedResultMode);
+
+      const playRef = doc(db, "groups", currentGroupId, "plays", playRecord.id);
+
+      const payload = {
+        groupId: currentGroupId,
+        voteId: playRecord.voteId,
+        sessionIndex:
+          typeof playRecord.sessionIndex === "number" ? playRecord.sessionIndex : null,
+        playedAt: typeof playedAt === "number" ? playedAt : null,
+        winnerGameId: effectiveWinnerId,
+        playedGameIds: normalizedPlayedGameIds,
+        resultMode: normalizedResultMode,
+        placements: normalizedPlacements,
+        createdAt:
+          typeof playRecord.createdAt === "number" ? playRecord.createdAt : now,
+        updatedAt: now,
+        createdBy: playRecord.createdBy || user.uid,
+      };
+
+      try {
+        setIsSavingPastPlay(true);
+        await setDoc(playRef, payload, { merge: true });
+        showToast("Session updated ✅", "success");
+        setEditingPastPlay(null);
+      } catch (e) {
+        console.error("savePastSessionPlay failed:", e);
+        showToast(e.code || e.message || "Failed to update session.", "error");
+      } finally {
+        setIsSavingPastPlay(false);
+      }
+    },
+    [user, currentGroupId, canEditPastSession, showToast]
+  );
 
   function openEditGame(game) {
     setEditGameForm({
@@ -2640,6 +2712,15 @@ export default function App() {
                                       <span className={`ui-chip-${playResultMode === "ranked" ? "blue" : playResultMode === "coop-win" ? "green" : "muted"}`}>
                                         {playResultMode === "ranked" ? "Ranked" : playResultMode === "coop-win" ? "Co-op win" : playResultMode === "coop-loss" ? "Co-op loss" : "No winner"}
                                       </span>
+                                      {canEditPastSession && (
+                                        <button
+                                          type="button"
+                                          className="ui-btn-secondary px-2.5 py-1 text-xs"
+                                          onClick={() => setEditingPastPlay(play)}
+                                        >
+                                          Edit session
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
 
@@ -2970,6 +3051,25 @@ export default function App() {
             </div>
           );
         })()}
+      </Modal>
+
+      {/* Modal: Edit past session */}
+      <Modal
+        open={!!editingPastPlay}
+        title="Edit session"
+        onClose={() => setEditingPastPlay(null)}
+      >
+        {editingPastPlay && (
+          <PastSessionEditModal
+            play={editingPastPlay}
+            groupGames={groupGames}
+            members={members}
+            memberProfilesById={memberProfilesById}
+            isSaving={isSavingPastPlay}
+            onSave={(payload) => savePastSessionPlay(editingPastPlay, payload)}
+            onClose={() => setEditingPastPlay(null)}
+          />
+        )}
       </Modal>
 
       <Toast toasts={toasts} onClose={closeToast} />
