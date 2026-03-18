@@ -5,11 +5,16 @@ import {
   collection,
   deleteDoc,
   doc,
+  endAt,
   getDoc,
   getDocFromServer,
   getDocs,
   increment,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
+  startAt,
   setDoc,
   updateDoc,
   writeBatch,
@@ -158,6 +163,41 @@ function normalizePlacements(placements, resultMode) {
   });
 }
 
+function normalizeParticipantIds(participantIds, fallbackIds = []) {
+  const uniqueIds = [];
+
+  for (const value of Array.isArray(participantIds) ? participantIds : []) {
+    const id = String(value || "").trim();
+    if (!id || uniqueIds.includes(id)) continue;
+    uniqueIds.push(id);
+  }
+
+  if (uniqueIds.length > 0) return uniqueIds;
+
+  const fallbackUnique = [];
+  for (const value of Array.isArray(fallbackIds) ? fallbackIds : []) {
+    const id = String(value || "").trim();
+    if (!id || fallbackUnique.includes(id)) continue;
+    fallbackUnique.push(id);
+  }
+
+  return fallbackUnique;
+}
+
+function truncateUserId(userId) {
+  const value = String(userId || "").trim();
+  if (!value) return "Unknown user";
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function normalizeParticipantPlacements(placements, resultMode, participantIds) {
+  const normalized = normalizePlacements(placements, resultMode);
+  const allowed = new Set(normalizeParticipantIds(participantIds));
+  if (!allowed.size) return normalized;
+  return normalized.filter((entry) => allowed.has(entry.userId));
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -181,6 +221,7 @@ export default function App() {
 
   const members = useGroupMembers(user, currentGroupId, groupAccessReady);
   const [memberProfilesById, setMemberProfilesById] = useState({});
+  const [directoryProfilesById, setDirectoryProfilesById] = useState({});
 
   const [groupView, setGroupView] = useState(GROUP_VIEW.PICKER); // "picker" | "detail"
   const [groupTab, setGroupTab] = useState(GROUP_TAB.COLLECTION);
@@ -284,15 +325,42 @@ export default function App() {
             await setDoc(ref, { nickname: "", avatarId: DEFAULT_AVATAR_ID, createdAt: Date.now() });
             setProfile({ nickname: "", avatarId: DEFAULT_AVATAR_ID });
             setNickname("");
+            await setDoc(
+              doc(db, "userDirectory", u.uid),
+              {
+                userId: u.uid,
+                nickname: "",
+                nicknameLower: "",
+                avatarId: DEFAULT_AVATAR_ID,
+                isAnonymous: !!u.isAnonymous,
+                updatedAt: Date.now(),
+              },
+              { merge: true }
+            );
             return;
           }
 
           const data = snap.data();
+          const normalizedAvatarId = isValidAvatarId(data?.avatarId)
+            ? data.avatarId
+            : DEFAULT_AVATAR_ID;
           setProfile({
             ...data,
-            avatarId: isValidAvatarId(data?.avatarId) ? data.avatarId : DEFAULT_AVATAR_ID,
+            avatarId: normalizedAvatarId,
           });
           setNickname(data.nickname || "");
+          await setDoc(
+            doc(db, "userDirectory", u.uid),
+            {
+              userId: u.uid,
+              nickname: String(data?.nickname || "").trim(),
+              nicknameLower: String(data?.nickname || "").trim().toLowerCase(),
+              avatarId: normalizedAvatarId,
+              isAnonymous: !!u.isAnonymous,
+              updatedAt: Date.now(),
+            },
+            { merge: true }
+          );
         } catch (err) {
           console.error("Failed to load profile:", err);
         }
@@ -436,6 +504,22 @@ export default function App() {
     }).filter(Boolean);
 
     setMemberProfilesById(Object.fromEntries(rows));
+  }, [members]);
+
+  const memberById = useMemo(() => {
+    const map = new Map();
+    for (const member of members || []) {
+      const userId = String(member?.userId || "").trim();
+      if (!userId) continue;
+      map.set(userId, member);
+    }
+    return map;
+  }, [members]);
+
+  const groupMemberIds = useMemo(() => {
+    return (members || [])
+      .map((member) => String(member?.userId || "").trim())
+      .filter(Boolean);
   }, [members]);
 
   useEffect(() => {
@@ -730,14 +814,19 @@ export default function App() {
           data.resultMode,
           defaultResultMode(winnerGameId)
         );
+        const participantIds = normalizeParticipantIds(
+          data.participantIds,
+          groupMemberIds
+        );
 
         setSessionPlayRecord({
           id: snap.id,
           ...data,
           winnerGameId,
           resultMode,
+          participantIds,
           playedGameIds: normalizePlayedGameIds(data.playedGameIds, winnerGameId),
-          placements: normalizePlacements(data.placements, resultMode),
+          placements: normalizeParticipantPlacements(data.placements, resultMode, participantIds),
         });
       },
       (err) => {
@@ -747,7 +836,127 @@ export default function App() {
     );
 
     return unsub;
-  }, [currentGroupId, activeVote?.id, activeVote?.status, activeVote?.winnerGameId]);
+  }, [
+    currentGroupId,
+    activeVote?.id,
+    activeVote?.status,
+    activeVote?.winnerGameId,
+    groupMemberIds,
+  ]);
+
+  const normalizedSessionHistory = useMemo(() => {
+    return (sessionHistory || []).map((play) => {
+      const winnerGameId =
+        typeof play?.winnerGameId === "string" && play.winnerGameId.trim()
+          ? play.winnerGameId.trim()
+          : null;
+      const resultMode = normalizeResultMode(
+        play?.resultMode,
+        defaultResultMode(winnerGameId)
+      );
+      const participantIds = normalizeParticipantIds(play?.participantIds, groupMemberIds);
+
+      return {
+        ...play,
+        winnerGameId,
+        resultMode,
+        participantIds,
+        playedGameIds: normalizePlayedGameIds(play?.playedGameIds, winnerGameId),
+        placements: normalizeParticipantPlacements(play?.placements, resultMode, participantIds),
+      };
+    });
+  }, [sessionHistory, groupMemberIds]);
+
+  const knownParticipantIds = useMemo(() => {
+    const ids = new Set(groupMemberIds);
+
+    for (const userId of normalizeParticipantIds(sessionPlayRecord?.participantIds, groupMemberIds)) {
+      ids.add(userId);
+    }
+
+    for (const play of normalizedSessionHistory) {
+      for (const userId of normalizeParticipantIds(play?.participantIds, groupMemberIds)) {
+        ids.add(userId);
+      }
+    }
+
+    return [...ids];
+  }, [groupMemberIds, sessionPlayRecord?.participantIds, normalizedSessionHistory]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadKnownDirectoryProfiles() {
+      const missingIds = knownParticipantIds.filter((userId) => {
+        if (!userId) return false;
+        if (memberById.has(userId)) return false;
+        return !directoryProfilesById[userId];
+      });
+
+      if (missingIds.length === 0) return;
+
+      const snaps = await Promise.all(
+        missingIds.map((userId) => getDoc(doc(db, "userDirectory", userId)))
+      );
+
+      if (cancelled) return;
+
+      setDirectoryProfilesById((prev) => {
+        const next = { ...prev };
+        snaps.forEach((snap, index) => {
+          if (!snap.exists()) return;
+          const data = snap.data() || {};
+          const userId = String(data.userId || snap.id || missingIds[index] || "").trim();
+          if (!userId) return;
+          next[userId] = {
+            userId,
+            nickname: String(data.nickname || "").trim(),
+            avatarId: isValidAvatarId(data.avatarId) ? data.avatarId : DEFAULT_AVATAR_ID,
+          };
+        });
+        return next;
+      });
+    }
+
+    loadKnownDirectoryProfiles().catch((err) => {
+      console.warn("Failed to hydrate participant directory profiles:", err);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [knownParticipantIds, memberById, directoryProfilesById]);
+
+  const participantSummaryById = useMemo(() => {
+    const map = {};
+
+    for (const userId of knownParticipantIds) {
+      const member = memberById.get(userId);
+      const directory = directoryProfilesById[userId] || null;
+      const nickname = String(member?.nickname || directory?.nickname || "").trim();
+      const avatarId = isValidAvatarId(memberProfilesById?.[userId]?.avatarId)
+        ? memberProfilesById[userId].avatarId
+        : isValidAvatarId(member?.avatarId)
+        ? member.avatarId
+        : isValidAvatarId(directory?.avatarId)
+        ? directory.avatarId
+        : DEFAULT_AVATAR_ID;
+
+      map[userId] = {
+        userId,
+        nickname,
+        label: nickname || truncateUserId(userId),
+        avatarId,
+        isMember: !!member,
+      };
+    }
+
+    return map;
+  }, [knownParticipantIds, memberById, directoryProfilesById, memberProfilesById]);
+
+  const currentSessionParticipantIds = useMemo(() => {
+    return normalizeParticipantIds(sessionPlayRecord?.participantIds, []);
+  }, [sessionPlayRecord?.participantIds]);
 
   // --- Actions ---
   const showToast = useCallback((message, type = "info", title = "") => {
@@ -766,7 +975,7 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds, resultMode, placements }) => {
+  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds, resultMode, placements, participantIds }) => {
     if (!user || !currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) {
       return;
     }
@@ -782,8 +991,16 @@ export default function App() {
       resultMode,
       defaultResultMode(winnerGameId)
     );
+    const normalizedParticipantIds = normalizeParticipantIds(
+      participantIds,
+      groupMemberIds
+    );
     const normalizedPlayedGameIds = normalizePlayedGameIds(playedGameIds, winnerGameId);
-    const normalizedPlacements = normalizePlacements(placements, normalizedResultMode);
+    const normalizedPlacements = normalizeParticipantPlacements(
+      placements,
+      normalizedResultMode,
+      normalizedParticipantIds
+    );
     const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
 
     const payload = {
@@ -796,6 +1013,7 @@ export default function App() {
       playedAt: typeof playedAt === "number" ? playedAt : null,
       winnerGameId,
       playedGameIds: normalizedPlayedGameIds,
+      participantIds: normalizedParticipantIds,
       resultMode: normalizedResultMode,
       placements: normalizedPlacements,
       createdAt:
@@ -821,6 +1039,7 @@ export default function App() {
     currentGroupId,
     activeVote,
     canManageSession,
+    groupMemberIds,
     sessionPlayRecord,
     showToast,
   ]);
@@ -830,7 +1049,7 @@ export default function App() {
   // while allowing date, winner, additional games, result mode, and placements
   // to be updated.
   const savePastSessionPlay = useCallback(
-    async (playRecord, { playedAt, winnerGameId, playedGameIds, resultMode, placements }) => {
+    async (playRecord, { playedAt, winnerGameId, playedGameIds, resultMode, placements, participantIds }) => {
       if (!user || !currentGroupId || !playRecord?.id) return;
 
       if (!canEditPastSession) {
@@ -847,11 +1066,19 @@ export default function App() {
         resultMode,
         defaultResultMode(effectiveWinnerId)
       );
+      const normalizedParticipantIds = normalizeParticipantIds(
+        participantIds,
+        groupMemberIds
+      );
       const normalizedPlayedGameIds = normalizePlayedGameIds(
         playedGameIds,
         effectiveWinnerId
       );
-      const normalizedPlacements = normalizePlacements(placements, normalizedResultMode);
+      const normalizedPlacements = normalizeParticipantPlacements(
+        placements,
+        normalizedResultMode,
+        normalizedParticipantIds
+      );
 
       const playRef = doc(db, "groups", currentGroupId, "plays", playRecord.id);
 
@@ -863,6 +1090,7 @@ export default function App() {
         playedAt: typeof playedAt === "number" ? playedAt : null,
         winnerGameId: effectiveWinnerId,
         playedGameIds: normalizedPlayedGameIds,
+        participantIds: normalizedParticipantIds,
         resultMode: normalizedResultMode,
         placements: normalizedPlacements,
         createdAt:
@@ -883,7 +1111,7 @@ export default function App() {
         setIsSavingPastPlay(false);
       }
     },
-    [user, currentGroupId, canEditPastSession, showToast]
+    [user, currentGroupId, canEditPastSession, groupMemberIds, showToast]
   );
 
   function openEditGame(game) {
@@ -928,6 +1156,10 @@ export default function App() {
     await updateDoc(doc(db, "users", user.uid), { nickname: trimmed });
     setProfile((p) => ({ ...(p || {}), nickname: trimmed }));
     setNickname(trimmed);
+    await upsertMyUserDirectoryProfile({
+      nickname: trimmed,
+      avatarId: profile?.avatarId,
+    });
 
     await syncMyNicknameToGroupMemberships(trimmed);
   }
@@ -938,6 +1170,10 @@ export default function App() {
 
     await updateDoc(doc(db, "users", user.uid), { avatarId });
     setProfile((prev) => ({ ...(prev || {}), avatarId }));
+    await upsertMyUserDirectoryProfile({
+      nickname: profile?.nickname,
+      avatarId,
+    });
     await syncMyAvatarToGroupMemberships(avatarId);
   }
 
@@ -945,6 +1181,80 @@ export default function App() {
     if (v == null) return "";
     return String(v);
   }
+
+  const upsertMyUserDirectoryProfile = useCallback(
+    async ({ nickname: nextNickname, avatarId: nextAvatarId } = {}) => {
+      if (!user?.uid) return;
+
+      const normalizedNickname = String(nextNickname ?? "").trim();
+      const normalizedAvatarId = isValidAvatarId(nextAvatarId)
+        ? nextAvatarId
+        : DEFAULT_AVATAR_ID;
+
+      await setDoc(
+        doc(db, "userDirectory", user.uid),
+        {
+          userId: user.uid,
+          nickname: normalizedNickname,
+          nicknameLower: normalizedNickname.toLowerCase(),
+          avatarId: normalizedAvatarId,
+          isAnonymous: !!user?.isAnonymous,
+          updatedAt: Date.now(),
+        },
+        { merge: true }
+      );
+
+      setDirectoryProfilesById((prev) => ({
+        ...prev,
+        [user.uid]: {
+          userId: user.uid,
+          nickname: normalizedNickname,
+          avatarId: normalizedAvatarId,
+          isAnonymous: !!user?.isAnonymous,
+        },
+      }));
+    },
+    [user?.uid]
+  );
+
+  const searchSessionAccounts = useCallback(async (rawQuery) => {
+    const requestedUserId = String(rawQuery || "").trim();
+    if (!requestedUserId) return [];
+
+    const exactSnap = await getDoc(doc(db, "userDirectory", requestedUserId));
+    if (!exactSnap.exists()) return [];
+
+    const data = exactSnap.data() || {};
+    const userId = String(data.userId || exactSnap.id || "").trim();
+    if (!userId) return [];
+
+    const isAnonymousAccount = data?.isAnonymous === true;
+
+    const results = [{
+      userId,
+      nickname: String(data.nickname || "").trim(),
+      avatarId: isValidAvatarId(data.avatarId) ? data.avatarId : DEFAULT_AVATAR_ID,
+      isAnonymous: isAnonymousAccount,
+      isEligibleGuest: !isAnonymousAccount,
+    }];
+
+    if (results.length > 0) {
+      setDirectoryProfilesById((prev) => {
+        const next = { ...prev };
+        for (const result of results) {
+          next[result.userId] = {
+            userId: result.userId,
+            nickname: result.nickname,
+            avatarId: result.avatarId,
+            isAnonymous: result.isAnonymous === true,
+          };
+        }
+        return next;
+      });
+    }
+
+    return results;
+  }, []);
 
   const syncMyCollectionToGroup = useCallback(async (groupId) => {
     if (!user) return;
@@ -1679,6 +1989,7 @@ export default function App() {
           playedAt: now,
           winnerGameId: winnerGameId || null,
           playedGameIds: normalizePlayedGameIds([], winnerGameId),
+          participantIds: normalizeParticipantIds([], groupMemberIds),
           resultMode: defaultResultMode(winnerGameId),
           placements: [],
           createdAt: now,
@@ -1721,6 +2032,7 @@ export default function App() {
     canCloseActiveVote,
     poolDocs,
     effectiveWeights,
+    groupMemberIds,
     sessionIndex,
     showToast,
   ]);
@@ -2458,6 +2770,7 @@ export default function App() {
           setNickname={setNickname}
           onSaveNickname={saveNickname}
           onSaveAvatarId={saveAvatarId}
+          onToast={showToast}
         />
       )}
 
@@ -2550,8 +2863,10 @@ export default function App() {
                         sessionPlayRecord={sessionPlayRecord}
                         onSaveSessionPlay={saveSessionPlay}
                         isSavingSessionPlay={isSavingSessionPlay}
-                        sessionHistory={sessionHistory}
-                        memberProfilesById={memberProfilesById}
+                        sessionHistory={normalizedSessionHistory}
+                        participantSummaryById={participantSummaryById}
+                        onSearchAccounts={searchSessionAccounts}
+                        onToast={showToast}
                         showArchiveHistory={false}
                       />
                     }
@@ -2565,13 +2880,13 @@ export default function App() {
                                 A record of all your group's past sessions and outcomes.
                               </p>
                             </div>
-                            <span className="ui-chip-muted text-sm shrink-0">{sessionHistory?.length || 0} session{sessionHistory?.length === 1 ? "" : "s"}</span>
+                            <span className="ui-chip-muted text-sm shrink-0">{normalizedSessionHistory?.length || 0} session{normalizedSessionHistory?.length === 1 ? "" : "s"}</span>
                           </div>
                         </div>
 
-                        {sessionHistory && sessionHistory.length > 0 ? (
+                        {normalizedSessionHistory && normalizedSessionHistory.length > 0 ? (
                           <div className="space-y-3 px-4 md:px-0">
-                            {sessionHistory.map((play) => {
+                            {normalizedSessionHistory.map((play) => {
                               const title = play?.winnerGameId
                                 ? (games.find((g) => g.id === play.winnerGameId)?.title || play.winnerGameId)
                                 : "No winner";
@@ -2590,16 +2905,16 @@ export default function App() {
                                 defaultResultMode(play?.winnerGameId)
                               );
 
-                              const playPlacements = normalizePlacements(
+                              const playPlacements = normalizeParticipantPlacements(
                                 play?.placements,
-                                playResultMode
+                                playResultMode,
+                                play?.participantIds
                               );
 
                               const memberLabel = (userId) => {
                                 const value = String(userId || "").trim();
-                                const member = members.find((m) => m.userId === value);
-                                const nickname = String(member?.nickname || "").trim();
-                                if (nickname) return nickname;
+                                const summary = participantSummaryById[value];
+                                if (summary?.label) return summary.label;
                                 if (!value) return "Unknown member";
                                 return value.length <= 12
                                   ? value
@@ -2608,11 +2923,10 @@ export default function App() {
 
                               const memberAvatar = (userId) => {
                                 const value = String(userId || "").trim();
-                                const member = members.find((m) => m.userId === value);
-                                const profileAvatarId = memberProfilesById?.[value]?.avatarId;
-                                const avatarId = isValidAvatarId(profileAvatarId)
-                                  ? profileAvatarId
-                                  : (isValidAvatarId(member?.avatarId) ? member.avatarId : DEFAULT_AVATAR_ID);
+                                const summary = participantSummaryById[value];
+                                const avatarId = isValidAvatarId(summary?.avatarId)
+                                  ? summary.avatarId
+                                  : DEFAULT_AVATAR_ID;
                                 const avatar = avatarById(avatarId);
 
                                 return {
@@ -2699,6 +3013,11 @@ export default function App() {
                                 ? play.playedGameIds.filter((id) => id !== play?.winnerGameId)
                                 : [];
 
+                              const participantBadges = (play?.participantIds || []).map((userId) => {
+                                const summary = participantSummaryById[String(userId || "").trim()];
+                                return summary || null;
+                              }).filter(Boolean);
+
                               return (
                                 <div
                                   key={play.id}
@@ -2769,6 +3088,43 @@ export default function App() {
                                     )}
                                   </div>
 
+                                  <div>
+                                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">
+                                      Participants <span className="text-blue-400">({participantBadges.length})</span>
+                                    </div>
+                                    {participantBadges.length === 0 ? (
+                                      <div className="text-sm text-neutral-400">No participants recorded.</div>
+                                    ) : (
+                                      <div className="flex flex-wrap gap-2">
+                                        {participantBadges.map((participant) => {
+                                          const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
+                                          return (
+                                            <span
+                                              key={`participant-${play.id}-${participant.userId}`}
+                                              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                                            >
+                                              <span className="h-5 w-5 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px]">
+                                                {avatar?.src ? (
+                                                  <img
+                                                    src={avatar.src}
+                                                    alt={avatar?.label || "Avatar"}
+                                                    className="h-full w-full object-cover"
+                                                  />
+                                                ) : (
+                                                  avatar?.icon || avatarIconById(participant.avatarId)
+                                                )}
+                                              </span>
+                                              <span>{participant.label}</span>
+                                              {!participant.isMember && (
+                                                <span className="text-neutral-400">(Guest)</span>
+                                              )}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+
                                   {playedGamesList.length > 0 && (
                                     <div>
                                       <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">
@@ -2796,6 +3152,8 @@ export default function App() {
                       <GroupToolsPanel
                         members={members}
                         memberProfilesById={memberProfilesById}
+                        sessionParticipantIds={currentSessionParticipantIds}
+                        participantSummaryById={participantSummaryById}
                       />
                     )}
                     canEditNewness={user?.uid === currentGroup?.ownerId}
@@ -3071,7 +3429,9 @@ export default function App() {
             play={editingPastPlay}
             groupGames={groupGames}
             members={members}
-            memberProfilesById={memberProfilesById}
+            participantSummaryById={participantSummaryById}
+            onSearchAccounts={searchSessionAccounts}
+            onToast={showToast}
             isSaving={isSavingPastPlay}
             onSave={(payload) => savePastSessionPlay(editingPastPlay, payload)}
             onClose={() => setEditingPastPlay(null)}

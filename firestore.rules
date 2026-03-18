@@ -123,6 +123,22 @@ match /users/{userId}/groups/{groupId} {
 }
 
 // -------------------------
+// Public user directory (for account lookup UX)
+// -------------------------
+match /userDirectory/{userId} {
+  allow read: if signedIn();
+
+  allow create, update: if isSelf(userId)
+    && request.resource.data.userId == request.auth.uid
+    && request.resource.data.nickname is string
+    && request.resource.data.nicknameLower is string
+    && request.resource.data.avatarId is string
+    && request.resource.data.updatedAt is number;
+
+  allow delete: if false;
+}
+
+// -------------------------
 // Groups
 // -------------------------
 match /groups/{groupId} {
@@ -378,6 +394,7 @@ match /groups/{groupId}/plays/{playId} {
       && (request.resource.data.playedAt == null || request.resource.data.playedAt is number)
       && (request.resource.data.winnerGameId == null || request.resource.data.winnerGameId is string)
       && request.resource.data.playedGameIds is list
+      && (!("participantIds" in request.resource.data) || request.resource.data.participantIds is list)
       && request.resource.data.createdAt is number
       && request.resource.data.updatedAt is number
       && request.resource.data.createdBy is string;

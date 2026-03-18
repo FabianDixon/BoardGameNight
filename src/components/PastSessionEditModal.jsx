@@ -76,6 +76,34 @@ function normalizePlacements(placements, resultMode) {
   });
 }
 
+function normalizeParticipantIds(participantIds, fallbackMemberIds = []) {
+  const unique = [];
+
+  for (const value of Array.isArray(participantIds) ? participantIds : []) {
+    const userId = String(value || "").trim();
+    if (!userId || unique.includes(userId)) continue;
+    unique.push(userId);
+  }
+
+  if (unique.length > 0) return unique;
+
+  const fallback = [];
+  for (const value of Array.isArray(fallbackMemberIds) ? fallbackMemberIds : []) {
+    const userId = String(value || "").trim();
+    if (!userId || fallback.includes(userId)) continue;
+    fallback.push(userId);
+  }
+
+  return fallback;
+}
+
+function normalizeParticipantPlacements(placements, resultMode, participantIds) {
+  const normalized = normalizePlacements(placements, resultMode);
+  const allowed = new Set(normalizeParticipantIds(participantIds));
+  if (!allowed.size) return normalized;
+  return normalized.filter((entry) => allowed.has(entry.userId));
+}
+
 function formatPlaceLabel(place) {
   const x = Number(place);
   if (!Number.isFinite(x) || x < 1) return "—";
@@ -126,7 +154,9 @@ export default function PastSessionEditModal({
   play,
   groupGames,
   members,
-  memberProfilesById = {},
+  participantSummaryById = {},
+  onSearchAccounts,
+  onToast,
   isSaving,
   onSave,
   onClose,
@@ -142,15 +172,27 @@ export default function PastSessionEditModal({
     defaultResultMode(initialWinnerGameId || null)
   );
 
+  const groupMemberIds = useMemo(() => {
+    return (members || [])
+      .map((member) => String(member?.userId || "").trim())
+      .filter(Boolean);
+  }, [members]);
+
+  const initialParticipantIds = normalizeParticipantIds(play?.participantIds, groupMemberIds);
+
   const [winnerGameId, setWinnerGameId] = useState(initialWinnerGameId);
   const [playedDate, setPlayedDate] = useState(toDateInputValue(play?.playedAt));
   const [playedGameIds, setPlayedGameIds] = useState(
     normalizePlayedGameIds(play?.playedGameIds, initialWinnerGameId)
   );
   const [resultMode, setResultMode] = useState(initialResultMode);
+  const [participantIds, setParticipantIds] = useState(initialParticipantIds);
   const [placements, setPlacements] = useState(
-    normalizePlacements(play?.placements, initialResultMode)
+    normalizeParticipantPlacements(play?.placements, initialResultMode, initialParticipantIds)
   );
+  const [participantSearchQuery, setParticipantSearchQuery] = useState("");
+  const [participantSearchResults, setParticipantSearchResults] = useState([]);
+  const [isSearchingParticipants, setIsSearchingParticipants] = useState(false);
 
   const sortedGames = useMemo(
     () =>
@@ -160,35 +202,48 @@ export default function PastSessionEditModal({
     [groupGames]
   );
 
-  const memberOptions = useMemo(
-    () =>
-      [...(members || [])].sort((a, b) =>
-        memberDisplayName(a).localeCompare(memberDisplayName(b))
-      ),
-    [members]
-  );
+  const memberOptions = useMemo(() => {
+    return [...(members || [])]
+      .filter((member) => String(member?.userId || "").trim())
+      .sort((a, b) => memberDisplayName(a).localeCompare(memberDisplayName(b)));
+  }, [members]);
+
+  const participantOptions = useMemo(() => {
+    return normalizeParticipantIds(participantIds, groupMemberIds)
+      .map((userId) => {
+        const member = (members || []).find((m) => String(m?.userId || "").trim() === userId);
+        const summary = participantSummaryById?.[userId] || null;
+        const label = summary?.label || memberDisplayName(member, userId);
+        const avatarId = isValidAvatarId(summary?.avatarId)
+          ? summary.avatarId
+          : isValidAvatarId(member?.avatarId)
+          ? member.avatarId
+          : DEFAULT_AVATAR_ID;
+        return {
+          userId,
+          label,
+          avatarId,
+          isMember: !!member,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [participantIds, groupMemberIds, members, participantSummaryById]);
+
+  const addableMemberOptions = useMemo(() => {
+    const selected = new Set(normalizeParticipantIds(participantIds, groupMemberIds));
+    return memberOptions
+      .filter((member) => !selected.has(String(member.userId || "").trim()))
+      .map((member) => ({
+        userId: String(member.userId || "").trim(),
+        label: memberDisplayName(member, member.userId),
+      }));
+  }, [memberOptions, participantIds, groupMemberIds]);
 
   const placementChoices = useMemo(
     () =>
-      Array.from({ length: Math.max(memberOptions.length, 4) }, (_, i) => i + 1),
-    [memberOptions.length]
+      Array.from({ length: Math.max(participantOptions.length, 4) }, (_, i) => i + 1),
+    [participantOptions.length]
   );
-
-  function memberAvatarFor(member) {
-    const userId = String(member?.userId || "").trim();
-    const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
-    const avatarId = isValidAvatarId(profileAvatarId)
-      ? profileAvatarId
-      : isValidAvatarId(member?.avatarId)
-      ? member.avatarId
-      : DEFAULT_AVATAR_ID;
-    const avatar = avatarById(avatarId);
-    return {
-      src: avatar?.src || null,
-      icon: avatar?.icon || avatarIconById(avatarId),
-      label: avatar?.label || "Avatar",
-    };
-  }
 
   // When the winner changes, keep all other played games but reorder so the
   // new winner is at front. The old winner naturally becomes an additional game.
@@ -204,7 +259,9 @@ export default function PastSessionEditModal({
       defaultResultMode(winnerGameId || null)
     );
     setResultMode(normalized);
-    setPlacements((prev) => normalizePlacements(prev, normalized));
+    setPlacements((prev) =>
+      normalizeParticipantPlacements(prev, normalized, participantIds)
+    );
   }
 
   function togglePlayedGame(gameId) {
@@ -225,14 +282,15 @@ export default function PastSessionEditModal({
     if (!uid) return;
     setPlacements((prev) => {
       const next = new Map(
-        normalizePlacements(prev, "ranked").map((e) => [e.userId, e])
+        normalizeParticipantPlacements(prev, "ranked", participantIds)
+          .map((e) => [e.userId, e])
       );
       if (placeValue == null) {
         next.delete(uid);
       } else {
         next.set(uid, { userId: uid, place: placeValue });
       }
-      return normalizePlacements([...next.values()], "ranked");
+      return normalizeParticipantPlacements([...next.values()], "ranked", participantIds);
     });
   }
 
@@ -241,15 +299,80 @@ export default function PastSessionEditModal({
     if (!uid) return;
     setPlacements((prev) => {
       const next = new Map(
-        normalizePlacements(prev, "coop-win").map((e) => [e.userId, e])
+        normalizeParticipantPlacements(prev, "coop-win", participantIds)
+          .map((e) => [e.userId, e])
       );
       if (next.has(uid)) {
         next.delete(uid);
       } else {
         next.set(uid, { userId: uid, place: 1 });
       }
-      return normalizePlacements([...next.values()], "coop-win");
+      return normalizeParticipantPlacements([...next.values()], "coop-win", participantIds);
     });
+  }
+
+  function addParticipant(userId) {
+    const id = String(userId || "").trim();
+    if (!id) {
+      onToast?.("Enter a valid user ID.", "error");
+      return false;
+    }
+
+    let added = false;
+    setParticipantIds((prev) => {
+      if (prev.includes(id)) return prev;
+      added = true;
+      return normalizeParticipantIds([...prev, id], groupMemberIds);
+    });
+
+    return added;
+  }
+
+  function removeParticipant(userId) {
+    const id = String(userId || "").trim();
+    if (!id) return;
+
+    setParticipantIds((prev) => {
+      const next = normalizeParticipantIds(prev.filter((value) => value !== id), groupMemberIds);
+      setPlacements((priorPlacements) =>
+        normalizeParticipantPlacements(priorPlacements, resultMode, next)
+      );
+      return next;
+    });
+  }
+
+  async function runParticipantSearch() {
+    if (!onSearchAccounts) return;
+
+    const queryText = String(participantSearchQuery || "").trim();
+    if (!queryText) {
+      setParticipantSearchResults([]);
+      onToast?.("Paste a user ID to look up a guest.", "error");
+      return;
+    }
+
+    try {
+      setIsSearchingParticipants(true);
+      const rows = await onSearchAccounts(queryText);
+      const nextRows = Array.isArray(rows) ? rows : [];
+      const eligibleRows = nextRows.filter((row) => row?.isEligibleGuest !== false);
+
+      if (eligibleRows.length < nextRows.length) {
+        onToast?.("Temporary accounts cannot be added as guests.", "error");
+      }
+
+      setParticipantSearchResults(eligibleRows);
+
+      if (nextRows.length === 0) {
+        onToast?.("No user found for that ID.", "info");
+      }
+    } catch (err) {
+      console.error("Participant search failed:", err);
+      setParticipantSearchResults([]);
+      onToast?.("Could not look up that user ID.", "error");
+    } finally {
+      setIsSearchingParticipants(false);
+    }
   }
 
   async function handleSave() {
@@ -259,11 +382,16 @@ export default function PastSessionEditModal({
       playedAt: fromDateInputValue(playedDate),
       winnerGameId: effectiveWinnerId,
       playedGameIds: normalizePlayedGameIds(playedGameIds, effectiveWinnerId),
+      participantIds: normalizeParticipantIds(participantIds, groupMemberIds),
       resultMode: normalizeResultMode(
         resultMode,
         defaultResultMode(effectiveWinnerId)
       ),
-      placements: normalizePlacements(placements, resultMode),
+      placements: normalizeParticipantPlacements(
+        placements,
+        resultMode,
+        participantIds
+      ),
     });
   }
 
@@ -340,6 +468,166 @@ export default function PastSessionEditModal({
         </div>
       </div>
 
+      {/* Participants */}
+      <div className="ui-surface-subtle border rounded-xl">
+        <div className="px-3 py-2 border-b border-neutral-700">
+          <div className="ui-field-label">Participants</div>
+          <div className="ui-field-hint">
+            Session participants can include group members and guest accounts.
+          </div>
+        </div>
+
+        <div className="px-3 py-3 space-y-3">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">
+              Current participants ({participantOptions.length})
+            </div>
+
+            {participantOptions.length === 0 ? (
+              <div className="text-sm text-neutral-400">No participants selected.</div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {participantOptions.map((participant) => {
+                  const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
+                  return (
+                    <span
+                      key={`selected-participant-${participant.userId}`}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                    >
+                      <span className="h-5 w-5 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px]">
+                        {avatar?.src ? (
+                          <img
+                            src={avatar.src}
+                            alt={avatar?.label || "Avatar"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          avatar?.icon || avatarIconById(participant.avatarId)
+                        )}
+                      </span>
+                      <span>{participant.label}</span>
+                      {!participant.isMember && <span className="text-neutral-400">(Guest)</span>}
+                      <button
+                        type="button"
+                        className="text-neutral-400 hover:text-white"
+                        onClick={() => removeParticipant(participant.userId)}
+                        title="Remove from this session"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {addableMemberOptions.length > 0 && (
+            <div>
+              <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Add group members</div>
+              <div className="flex flex-wrap gap-2">
+                {addableMemberOptions.map((member) => (
+                  <button
+                    key={`member-add-${member.userId}`}
+                    type="button"
+                    className="ui-pill ui-pill-inactive text-xs"
+                    onClick={() => addParticipant(member.userId)}
+                  >
+                    + {member.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Add guest account</div>
+            <div className="ui-field-hint mb-2">Use the exact user ID.</div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="w-full"
+                placeholder="Paste exact user ID"
+                value={participantSearchQuery}
+                onChange={(e) => setParticipantSearchQuery(e.target.value)}
+              />
+              <button
+                type="button"
+                className="ui-btn-secondary text-xs px-3"
+                onClick={runParticipantSearch}
+                disabled={isSearchingParticipants || !String(participantSearchQuery || "").trim()}
+              >
+                {isSearchingParticipants ? "Looking up…" : "Find"}
+              </button>
+            </div>
+
+            {participantSearchResults.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {participantSearchResults.map((result) => {
+                  const userId = String(result?.userId || "").trim();
+                  if (!userId) return null;
+                  const alreadySelected = participantIds.includes(userId);
+                  const avatar = avatarById(result?.avatarId || DEFAULT_AVATAR_ID);
+
+                  return (
+                    <div
+                      key={`search-result-${userId}`}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px] shrink-0">
+                          {avatar?.src ? (
+                            <img
+                              src={avatar.src}
+                              alt={avatar?.label || "Avatar"}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            avatar?.icon || avatarIconById(result?.avatarId)
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-sm text-neutral-200 truncate">
+                            {String(result?.nickname || "").trim() || memberDisplayName(null, userId)}
+                          </div>
+                          <div className="text-xs text-neutral-500 truncate">{userId}</div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="ui-btn-secondary text-xs px-2.5 py-1"
+                        disabled={alreadySelected}
+                        onClick={() => {
+                          if (result?.isEligibleGuest === false) {
+                            onToast?.("Temporary accounts cannot be added as guests.", "error");
+                            return;
+                          }
+
+                          if (alreadySelected) {
+                            onToast?.("That participant is already added.", "info");
+                            return;
+                          }
+
+                          const added = addParticipant(userId);
+                          if (added) {
+                            onToast?.("Guest added to this session.", "success");
+                          } else {
+                            onToast?.("Could not add that participant.", "error");
+                          }
+                        }}
+                      >
+                        {alreadySelected ? "Added" : "Add"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Result mode */}
       <div>
         <div className="ui-field-label">Result type</div>
@@ -371,21 +659,21 @@ export default function PastSessionEditModal({
             </div>
           </div>
 
-          {memberOptions.length === 0 ? (
+          {participantOptions.length === 0 ? (
             <div className="px-3 py-3 text-sm text-neutral-400">
-              No group members available.
+              No participants available.
             </div>
           ) : (
             <div className="max-h-72 overflow-y-auto">
-              {memberOptions.map((member) => {
+              {participantOptions.map((participant) => {
                 const selectedPlacement = placements.find(
-                  (e) => e.userId === member.userId
+                  (e) => e.userId === participant.userId
                 );
-                const avatar = memberAvatarFor(member);
+                const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
 
                 return (
                   <div
-                    key={member.userId}
+                    key={participant.userId}
                     className="flex items-center justify-between gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0"
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -397,11 +685,12 @@ export default function PastSessionEditModal({
                             className="h-full w-full object-cover"
                           />
                         ) : (
-                          avatar.icon
+                          avatar?.icon || avatarIconById(participant.avatarId)
                         )}
                       </span>
                       <span className="text-sm text-neutral-300 min-w-0 truncate">
-                        {memberDisplayName(member, member.userId)}
+                        {participant.label}
+                        {!participant.isMember && " (Guest)"}
                       </span>
                     </div>
 
@@ -411,7 +700,7 @@ export default function PastSessionEditModal({
                       onChange={(e) => {
                         const raw = e.target.value;
                         setRankedPlacement(
-                          member.userId,
+                          participant.userId,
                           raw ? Number(raw) : null
                         );
                       }}
@@ -440,28 +729,28 @@ export default function PastSessionEditModal({
             </div>
           </div>
 
-          {memberOptions.length === 0 ? (
+          {participantOptions.length === 0 ? (
             <div className="px-3 py-3 text-sm text-neutral-400">
-              No group members available.
+              No participants available.
             </div>
           ) : (
             <div className="max-h-72 overflow-y-auto">
-              {memberOptions.map((member) => {
+              {participantOptions.map((participant) => {
                 const checked = placements.some(
-                  (e) => e.userId === member.userId
+                  (e) => e.userId === participant.userId
                 );
-                const avatar = memberAvatarFor(member);
+                const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
 
                 return (
                   <label
-                    key={member.userId}
+                    key={participant.userId}
                     className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800 transition"
                   >
                     <input
                       type="checkbox"
                       className="mt-1 shrink-0"
                       checked={checked}
-                      onChange={() => toggleCoopWinner(member.userId)}
+                      onChange={() => toggleCoopWinner(participant.userId)}
                     />
                     <span className="block flex-1 min-w-0 break-words text-sm text-neutral-300">
                       <span className="inline-flex items-center gap-2 min-w-0">
@@ -473,11 +762,12 @@ export default function PastSessionEditModal({
                               className="h-full w-full object-cover"
                             />
                           ) : (
-                            avatar.icon
+                            avatar?.icon || avatarIconById(participant.avatarId)
                           )}
                         </span>
                         <span className="min-w-0 truncate">
-                          {memberDisplayName(member, member.userId)}
+                          {participant.label}
+                          {!participant.isMember && " (Guest)"}
                         </span>
                       </span>
                     </span>

@@ -7,7 +7,6 @@ import {
   DEFAULT_AVATAR_ID,
   avatarById,
   avatarIconById,
-  isValidAvatarId,
 } from "../constants/avatars";
 
 function VoteTile({
@@ -178,6 +177,34 @@ function normalizePlacements(placements, resultMode) {
   });
 }
 
+function normalizeParticipantIds(participantIds, fallbackMemberIds = []) {
+  const unique = [];
+
+  for (const value of Array.isArray(participantIds) ? participantIds : []) {
+    const userId = String(value || "").trim();
+    if (!userId || unique.includes(userId)) continue;
+    unique.push(userId);
+  }
+
+  if (unique.length > 0) return unique;
+
+  const fallback = [];
+  for (const value of Array.isArray(fallbackMemberIds) ? fallbackMemberIds : []) {
+    const userId = String(value || "").trim();
+    if (!userId || fallback.includes(userId)) continue;
+    fallback.push(userId);
+  }
+
+  return fallback;
+}
+
+function normalizeParticipantPlacements(placements, resultMode, participantIds) {
+  const normalized = normalizePlacements(placements, resultMode);
+  const allowed = new Set(normalizeParticipantIds(participantIds));
+  if (!allowed.size) return normalized;
+  return normalized.filter((entry) => allowed.has(entry.userId));
+}
+
 function formatPlaceLabel(place) {
   const x = Number(place);
   if (!Number.isFinite(x) || x < 1) return "—";
@@ -205,6 +232,14 @@ function memberDisplayName(member, fallbackUserId = "") {
   }
 
   return truncateUserId(fallbackUserId);
+}
+
+function resolveAvatar(avatarId) {
+  return (
+    avatarById(avatarId) ||
+    avatarById(DEFAULT_AVATAR_ID) ||
+    { label: "Avatar", icon: avatarIconById(DEFAULT_AVATAR_ID), src: null }
+  );
 }
 
 function sessionLabelFromIndex(sessionIndex, fallback = "Session") {
@@ -293,7 +328,9 @@ function VotingPanelInner({
   onSaveSessionPlay,
   isSavingSessionPlay,
   sessionHistory,
-  memberProfilesById = {},
+  participantSummaryById = {},
+  onSearchAccounts,
+  onToast,
   showArchiveHistory = true,
 
   canEmailSession,
@@ -474,26 +511,17 @@ function VotingPanelInner({
     [members]
   );
 
-  const memberOptions = useMemo(() => {
-    return [...(members || [])].sort((a, b) =>
-      memberDisplayName(a).localeCompare(memberDisplayName(b))
-    );
+  const groupMemberIds = useMemo(() => {
+    return (members || [])
+      .map((member) => String(member?.userId || "").trim())
+      .filter(Boolean);
   }, [members]);
 
-  const memberAvatarFor = (member) => {
-    const userId = String(member?.userId || "").trim();
-    const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
-    const avatarId = isValidAvatarId(profileAvatarId)
-      ? profileAvatarId
-      : (isValidAvatarId(member?.avatarId) ? member.avatarId : DEFAULT_AVATAR_ID);
-    const avatar = avatarById(avatarId);
-
-    return {
-      src: avatar?.src || null,
-      icon: avatar?.icon || avatarIconById(avatarId),
-      label: avatar?.label || "Avatar",
-    };
-  };
+  const memberOptions = useMemo(() => {
+    return [...(members || [])]
+      .filter((member) => String(member?.userId || "").trim())
+      .sort((a, b) => memberDisplayName(a).localeCompare(memberDisplayName(b)));
+  }, [members]);
 
   const initialHistoryPlayedDate = status === VOTE_STATUS.CLOSED
     ? toDateInputValue(
@@ -519,19 +547,65 @@ function VotingPanelInner({
       )
     : defaultResultMode(winnerGameId);
 
+  const initialHistoryParticipantIds = status === VOTE_STATUS.CLOSED
+    ? normalizeParticipantIds(sessionPlayRecord?.participantIds, groupMemberIds)
+    : normalizeParticipantIds([], groupMemberIds);
+
   const initialHistoryPlacements = status === VOTE_STATUS.CLOSED
-    ? normalizePlacements(sessionPlayRecord?.placements, initialHistoryResultMode)
+    ? normalizeParticipantPlacements(
+        sessionPlayRecord?.placements,
+        initialHistoryResultMode,
+        initialHistoryParticipantIds
+      )
     : [];
 
   const [historyPlayedDate, setHistoryPlayedDate] = useState(initialHistoryPlayedDate);
   const [historyPlayedGameIds, setHistoryPlayedGameIds] = useState(initialHistoryPlayedGameIds);
   const [historyResultMode, setHistoryResultMode] = useState(initialHistoryResultMode);
+  const [historyParticipantIds, setHistoryParticipantIds] = useState(initialHistoryParticipantIds);
   const [historyPlacements, setHistoryPlacements] = useState(initialHistoryPlacements);
+  const [participantSearchQuery, setParticipantSearchQuery] = useState("");
+  const [participantSearchResults, setParticipantSearchResults] = useState([]);
+  const [isSearchingParticipants, setIsSearchingParticipants] = useState(false);
 
   const placementChoices = useMemo(() => {
-    const count = Math.max(memberOptions.length, 4);
+    const count = Math.max(historyParticipantIds.length, 4);
     return Array.from({ length: count }, (_, index) => index + 1);
-  }, [memberOptions.length]);
+  }, [historyParticipantIds.length]);
+
+  const participantOptions = useMemo(() => {
+    return historyParticipantIds
+      .map((userId) => {
+        const member = memberMap.get(userId);
+        const summary = participantSummaryById?.[userId] || null;
+        return {
+          userId,
+          label:
+            summary?.label ||
+            memberDisplayName(member, userId),
+          avatarId:
+            summary?.avatarId ||
+            member?.avatarId ||
+            DEFAULT_AVATAR_ID,
+          isMember: !!member,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [historyParticipantIds, memberMap, participantSummaryById]);
+
+  const addableMemberOptions = useMemo(() => {
+    const selected = new Set(historyParticipantIds);
+    return memberOptions
+      .filter((member) => !selected.has(String(member.userId || "").trim()))
+      .map((member) => {
+        const userId = String(member.userId || "").trim();
+        return {
+          userId,
+          label: memberDisplayName(member, userId),
+          avatarId: member?.avatarId || DEFAULT_AVATAR_ID,
+        };
+      });
+  }, [memberOptions, historyParticipantIds]);
 
   async function handleSubmit() {
     if (submitDisabled) return;
@@ -553,8 +627,13 @@ function VotingPanelInner({
     await onSaveSessionPlay({
       playedAt: fromDateInputValue(historyPlayedDate),
       playedGameIds: normalizePlayedGameIds(historyPlayedGameIds, winnerGameId),
+      participantIds: normalizeParticipantIds(historyParticipantIds, groupMemberIds),
       resultMode: historyResultMode,
-      placements: normalizePlacements(historyPlacements, historyResultMode),
+      placements: normalizeParticipantPlacements(
+        historyPlacements,
+        historyResultMode,
+        historyParticipantIds
+      ),
     });
   }
 
@@ -580,7 +659,7 @@ function VotingPanelInner({
   function handleResultModeChange(nextMode) {
     const normalizedMode = normalizeResultMode(nextMode, defaultResultMode(winnerGameId));
     setHistoryResultMode(normalizedMode);
-    setHistoryPlacements((prev) => normalizePlacements(prev, normalizedMode));
+    setHistoryPlacements((prev) => normalizeParticipantPlacements(prev, normalizedMode, historyParticipantIds));
   }
 
   function setRankedPlacement(userId, placeValue) {
@@ -589,7 +668,8 @@ function VotingPanelInner({
 
     setHistoryPlacements((prev) => {
       const next = new Map(
-        normalizePlacements(prev, "ranked").map((entry) => [entry.userId, entry])
+        normalizeParticipantPlacements(prev, "ranked", historyParticipantIds)
+          .map((entry) => [entry.userId, entry])
       );
 
       if (placeValue == null) {
@@ -598,7 +678,7 @@ function VotingPanelInner({
         next.set(normalizedUserId, { userId: normalizedUserId, place: placeValue });
       }
 
-      return normalizePlacements([...next.values()], "ranked");
+      return normalizeParticipantPlacements([...next.values()], "ranked", historyParticipantIds);
     });
   }
 
@@ -608,7 +688,8 @@ function VotingPanelInner({
 
     setHistoryPlacements((prev) => {
       const next = new Map(
-        normalizePlacements(prev, "coop-win").map((entry) => [entry.userId, entry])
+        normalizeParticipantPlacements(prev, "coop-win", historyParticipantIds)
+          .map((entry) => [entry.userId, entry])
       );
 
       if (next.has(normalizedUserId)) {
@@ -617,8 +698,72 @@ function VotingPanelInner({
         next.set(normalizedUserId, { userId: normalizedUserId, place: 1 });
       }
 
-      return normalizePlacements([...next.values()], "coop-win");
+      return normalizeParticipantPlacements([...next.values()], "coop-win", historyParticipantIds);
     });
+  }
+
+  function addParticipant(userId) {
+    const id = String(userId || "").trim();
+    if (!id) {
+      onToast?.("Enter a valid user ID.", "error");
+      return false;
+    }
+
+    let added = false;
+    setHistoryParticipantIds((prev) => {
+      if (prev.includes(id)) return prev;
+      added = true;
+      return normalizeParticipantIds([...prev, id], groupMemberIds);
+    });
+
+    return added;
+  }
+
+  function removeParticipant(userId) {
+    const id = String(userId || "").trim();
+    if (!id) return;
+
+    setHistoryParticipantIds((prev) => {
+      const next = normalizeParticipantIds(prev.filter((value) => value !== id), groupMemberIds);
+      setHistoryPlacements((placements) =>
+        normalizeParticipantPlacements(placements, historyResultMode, next)
+      );
+      return next;
+    });
+  }
+
+  async function runParticipantSearch() {
+    if (!onSearchAccounts) return;
+
+    const queryValue = String(participantSearchQuery || "").trim();
+    if (!queryValue) {
+      setParticipantSearchResults([]);
+      onToast?.("Paste a user ID to look up a guest.", "error");
+      return;
+    }
+
+    try {
+      setIsSearchingParticipants(true);
+      const rows = await onSearchAccounts(queryValue);
+      const nextRows = Array.isArray(rows) ? rows : [];
+      const eligibleRows = nextRows.filter((row) => row?.isEligibleGuest !== false);
+
+      if (eligibleRows.length < nextRows.length) {
+        onToast?.("Temporary accounts cannot be added as guests.", "error");
+      }
+
+      setParticipantSearchResults(eligibleRows);
+
+      if (nextRows.length === 0) {
+        onToast?.("No user found for that ID.", "info");
+      }
+    } catch (err) {
+      console.error("Participant search failed:", err);
+      setParticipantSearchResults([]);
+      onToast?.("Could not look up that user ID.", "error");
+    } finally {
+      setIsSearchingParticipants(false);
+    }
   }
 
   return (
@@ -991,6 +1136,165 @@ function VotingPanelInner({
                 </div>
               </div>
 
+              <div className="ui-surface-subtle border rounded-xl">
+                <div className="px-3 py-2 border-b border-neutral-700">
+                  <div className="ui-field-label">Participants</div>
+                  <div className="ui-field-hint">
+                    Session participants can include group members and guest accounts.
+                  </div>
+                </div>
+
+                <div className="px-3 py-3 space-y-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">
+                      Current participants ({participantOptions.length})
+                    </div>
+
+                    {participantOptions.length === 0 ? (
+                      <div className="text-sm text-neutral-400">No participants selected.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {participantOptions.map((participant) => {
+                          const avatar = resolveAvatar(participant.avatarId);
+                          return (
+                            <span
+                              key={`selected-participant-${participant.userId}`}
+                              className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-2 py-1 text-xs text-neutral-200"
+                            >
+                              <span className="h-5 w-5 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px]">
+                                {avatar?.src ? (
+                                  <img
+                                    src={avatar.src}
+                                    alt={avatar?.label || "Avatar"}
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : (
+                                  avatar?.icon || avatarIconById(participant.avatarId)
+                                )}
+                              </span>
+                              <span>{participant.label}</span>
+                              {!participant.isMember && <span className="text-neutral-400">(Guest)</span>}
+                              <button
+                                type="button"
+                                className="text-neutral-400 hover:text-white"
+                                onClick={() => removeParticipant(participant.userId)}
+                                title="Remove from this session"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {addableMemberOptions.length > 0 && (
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Add group members</div>
+                      <div className="flex flex-wrap gap-2">
+                        {addableMemberOptions.map((member) => (
+                          <button
+                            key={`member-add-${member.userId}`}
+                            type="button"
+                            className="ui-pill ui-pill-inactive text-xs"
+                            onClick={() => addParticipant(member.userId)}
+                          >
+                            + {member.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Add guest account</div>
+                    <div className="ui-field-hint mb-2">Use the exact user ID.</div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        className="w-full"
+                        placeholder="Paste exact user ID"
+                        value={participantSearchQuery}
+                        onChange={(e) => setParticipantSearchQuery(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="ui-btn-secondary text-xs px-3"
+                        onClick={runParticipantSearch}
+                        disabled={isSearchingParticipants || !String(participantSearchQuery || "").trim()}
+                      >
+                        {isSearchingParticipants ? "Looking up…" : "Find"}
+                      </button>
+                    </div>
+
+                    {participantSearchResults.length > 0 && (
+                      <div className="mt-2 space-y-2">
+                        {participantSearchResults.map((result) => {
+                          const userId = String(result?.userId || "").trim();
+                          if (!userId) return null;
+                          const alreadySelected = historyParticipantIds.includes(userId);
+                          const avatar = resolveAvatar(result?.avatarId);
+
+                          return (
+                            <div
+                              key={`search-result-${userId}`}
+                              className="flex items-center justify-between gap-3 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-[11px] shrink-0">
+                                  {avatar?.src ? (
+                                    <img
+                                      src={avatar.src}
+                                      alt={avatar?.label || "Avatar"}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  ) : (
+                                    avatar?.icon || avatarIconById(result?.avatarId)
+                                  )}
+                                </span>
+                                <div className="min-w-0">
+                                  <div className="text-sm text-neutral-200 truncate">
+                                    {String(result?.nickname || "").trim() || truncateUserId(userId)}
+                                  </div>
+                                  <div className="text-xs text-neutral-500 truncate">{userId}</div>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="ui-btn-secondary text-xs px-2.5 py-1"
+                                disabled={alreadySelected}
+                                onClick={() => {
+                                  if (result?.isEligibleGuest === false) {
+                                    onToast?.("Temporary accounts cannot be added as guests.", "error");
+                                    return;
+                                  }
+
+                                  if (alreadySelected) {
+                                    onToast?.("That participant is already added.", "info");
+                                    return;
+                                  }
+
+                                  const added = addParticipant(userId);
+                                  if (added) {
+                                    onToast?.("Guest added to this session.", "success");
+                                  } else {
+                                    onToast?.("Could not add that participant.", "error");
+                                  }
+                                }}
+                              >
+                                {alreadySelected ? "Added" : "Add"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {historyResultMode === "ranked" && (
                 <div className="ui-surface-subtle border rounded-xl">
                   <div className="px-3 py-2 border-b border-neutral-700">
@@ -999,35 +1303,36 @@ function VotingPanelInner({
                     </div>
                   </div>
 
-                  {memberOptions.length === 0 ? (
-                    <div className="px-3 py-3 text-sm text-neutral-400">No group members available.</div>
+                  {participantOptions.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-neutral-400">No participants available.</div>
                   ) : (
                     <div className="max-h-72 overflow-y-auto">
-                      {memberOptions.map((member) => {
+                      {participantOptions.map((participant) => {
                         const selectedPlacement = historyPlacements.find(
-                          (entry) => entry.userId === member.userId
+                          (entry) => entry.userId === participant.userId
                         );
-                        const avatar = memberAvatarFor(member);
+                        const avatar = resolveAvatar(participant.avatarId);
 
                         return (
                           <div
-                            key={member.userId}
+                            key={participant.userId}
                             className="flex items-center justify-between gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-xs shrink-0">
-                                {avatar.src ? (
+                                {avatar?.src ? (
                                   <img
                                     src={avatar.src}
-                                    alt={avatar.label}
+                                    alt={avatar?.label || "Avatar"}
                                     className="h-full w-full object-cover"
                                   />
                                 ) : (
-                                  avatar.icon
+                                  avatar?.icon || avatarIconById(participant.avatarId)
                                 )}
                               </span>
                               <span className="text-sm text-neutral-300 min-w-0 truncate">
-                                {memberDisplayName(member, member.userId)}
+                                {participant.label}
+                                {!participant.isMember && " (Guest)"}
                               </span>
                             </div>
 
@@ -1037,7 +1342,7 @@ function VotingPanelInner({
                               onChange={(e) => {
                                 const rawValue = e.target.value;
                                 setRankedPlacement(
-                                  member.userId,
+                                  participant.userId,
                                   rawValue ? Number(rawValue) : null
                                 );
                               }}
@@ -1063,41 +1368,44 @@ function VotingPanelInner({
                     <div className="ui-field-hint">Select the players who won together.</div>
                   </div>
 
-                  {memberOptions.length === 0 ? (
-                    <div className="px-3 py-3 text-sm text-neutral-400">No group members available.</div>
+                  {participantOptions.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-neutral-400">No participants available.</div>
                   ) : (
                     <div className="max-h-72 overflow-y-auto">
-                      {memberOptions.map((member) => {
+                      {participantOptions.map((participant) => {
                         const checked = historyPlacements.some(
-                          (entry) => entry.userId === member.userId
+                          (entry) => entry.userId === participant.userId
                         );
-                        const avatar = memberAvatarFor(member);
+                        const avatar = resolveAvatar(participant.avatarId);
 
                         return (
                           <label
-                            key={member.userId}
+                            key={participant.userId}
                             className="flex w-full items-start gap-3 px-3 py-3 border-b border-neutral-700 last:border-b-0 cursor-pointer hover:bg-neutral-800 transition"
                           >
                             <input
                               type="checkbox"
                               className="mt-1 shrink-0"
                               checked={checked}
-                              onChange={() => toggleCoopWinner(member.userId)}
+                              onChange={() => toggleCoopWinner(participant.userId)}
                             />
                             <span className="block flex-1 min-w-0 break-words text-sm text-neutral-300">
                               <span className="inline-flex items-center gap-2 min-w-0">
                                 <span className="h-6 w-6 overflow-hidden rounded-full border border-neutral-600 bg-neutral-800 flex items-center justify-center text-xs shrink-0">
-                                  {avatar.src ? (
+                                  {avatar?.src ? (
                                     <img
                                       src={avatar.src}
-                                      alt={avatar.label}
+                                      alt={avatar?.label || "Avatar"}
                                       className="h-full w-full object-cover"
                                     />
                                   ) : (
-                                    avatar.icon
+                                    avatar?.icon || avatarIconById(participant.avatarId)
                                   )}
                                 </span>
-                                <span className="min-w-0 truncate">{memberDisplayName(member, member.userId)}</span>
+                                <span className="min-w-0 truncate">
+                                  {participant.label}
+                                  {!participant.isMember && " (Guest)"}
+                                </span>
                               </span>
                             </span>
                           </label>
@@ -1150,11 +1458,25 @@ function VotingPanelInner({
                 play.resultMode,
                 defaultResultMode(play.winnerGameId)
               );
-              const playPlacements = normalizePlacements(play.placements, playResultMode);
+              const playParticipantIds = normalizeParticipantIds(play.participantIds, groupMemberIds);
+              const playPlacements = normalizeParticipantPlacements(
+                play.placements,
+                playResultMode,
+                playParticipantIds
+              );
+              const playParticipantMap = new Map(
+                playParticipantIds.map((userId) => {
+                  const summary = participantSummaryById?.[userId] || null;
+                  if (summary?.label) {
+                    return [userId, { nickname: summary.label }];
+                  }
+                  return [userId, memberMap.get(userId) || { userId }];
+                })
+              );
               const resultSummary = formatPlacementsSummary(
                 playResultMode,
                 playPlacements,
-                memberMap
+                playParticipantMap
               );
               
               const playedGamesList = Array.isArray(play.playedGameIds)

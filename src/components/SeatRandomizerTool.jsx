@@ -26,20 +26,60 @@ function displayNameForMember(member) {
   return `${userId.slice(0, 6)}…${userId.slice(-4)}`;
 }
 
-export default function SeatRandomizerTool({ members, memberProfilesById }) {
+export default function SeatRandomizerTool({
+  members,
+  memberProfilesById,
+  sessionParticipantIds = [],
+  participantSummaryById = {},
+}) {
   const participants = useMemo(() => {
-    return (members || []).map((member) => ({
-      id: String(member?.userId || "").trim(),
-      label: displayNameForMember(member),
-      avatarId: (() => {
-        const userId = String(member?.userId || "").trim();
-        const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
-        if (isValidAvatarId(profileAvatarId)) return profileAvatarId;
-        if (isValidAvatarId(member?.avatarId)) return member.avatarId;
-        return DEFAULT_AVATAR_ID;
-      })(),
-    })).filter((participant) => participant.id);
-  }, [members, memberProfilesById]);
+    const memberById = new Map(
+      (members || [])
+        .map((member) => [String(member?.userId || "").trim(), member])
+        .filter(([userId]) => !!userId)
+    );
+
+    const ids = [];
+    for (const value of Array.isArray(sessionParticipantIds) ? sessionParticipantIds : []) {
+      const userId = String(value || "").trim();
+      if (!userId || ids.includes(userId)) continue;
+      ids.push(userId);
+    }
+
+    if (ids.length > 0) {
+      return ids.map((userId) => {
+        const summary = participantSummaryById?.[userId] || null;
+        const member = memberById.get(userId) || null;
+
+        return {
+          id: userId,
+          label: summary?.label || displayNameForMember(member || { userId }),
+          avatarId: (() => {
+            if (isValidAvatarId(summary?.avatarId)) return summary.avatarId;
+
+            const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
+            if (isValidAvatarId(profileAvatarId)) return profileAvatarId;
+            if (isValidAvatarId(member?.avatarId)) return member.avatarId;
+            return DEFAULT_AVATAR_ID;
+          })(),
+        };
+      });
+    }
+
+    return (members || [])
+      .map((member) => ({
+        id: String(member?.userId || "").trim(),
+        label: displayNameForMember(member),
+        avatarId: (() => {
+          const userId = String(member?.userId || "").trim();
+          const profileAvatarId = memberProfilesById?.[userId]?.avatarId;
+          if (isValidAvatarId(profileAvatarId)) return profileAvatarId;
+          if (isValidAvatarId(member?.avatarId)) return member.avatarId;
+          return DEFAULT_AVATAR_ID;
+        })(),
+      }))
+      .filter((participant) => participant.id);
+  }, [members, memberProfilesById, sessionParticipantIds, participantSummaryById]);
 
   const [excludedIds, setExcludedIds] = useState(() => new Set());
   const [seatOrder, setSeatOrder] = useState([]);
@@ -90,7 +130,7 @@ export default function SeatRandomizerTool({ members, memberProfilesById }) {
       </div>
 
       {participants.length === 0 ? (
-        <p className="text-sm text-neutral-300">No group members found yet.</p>
+        <p className="text-sm text-neutral-300">No participants found yet.</p>
       ) : (
         <>
           <div className="space-y-2">
@@ -156,7 +196,7 @@ export default function SeatRandomizerTool({ members, memberProfilesById }) {
 
           {!canRandomize && (
             <p className="text-sm text-neutral-300">
-              Include at least one member to randomize.
+              Include at least one participant to randomize.
             </p>
           )}
 

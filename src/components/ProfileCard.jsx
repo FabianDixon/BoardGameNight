@@ -21,6 +21,7 @@ export default function ProfileCard({
   setNickname,
   onSaveNickname,
   onSaveAvatarId,
+  onToast,
 }) {
   const auth = useMemo(() => getAuth(), []);
 
@@ -132,6 +133,21 @@ export default function ProfileCard({
     }
   }
 
+  async function copyUserId() {
+    const userId = String(user?.uid || "").trim();
+    if (!userId) {
+      onToast?.("User ID is not available yet.", "error");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(userId);
+      onToast?.("User ID copied.", "success");
+    } catch {
+      onToast?.("Could not copy user ID.", "error");
+    }
+  }
+
   return (
     <div className="space-y-4 pt-2 md:pt-3">
       <div className="ui-surface p-5 md:p-6">
@@ -161,7 +177,17 @@ export default function ProfileCard({
                 <p className="text-lg font-semibold text-white truncate">
                   {profile.nickname || "No nickname set"}
                 </p>
-                <p className="text-xs text-neutral-500 mt-1">Default avatar selected</p>
+                <div className="mt-1 flex items-center gap-2 min-w-0">
+                  <p className="text-xs text-neutral-500 truncate">User ID: {user?.uid || "—"}</p>
+                  <button
+                    type="button"
+                    className="ui-btn-secondary text-[11px] px-2 py-0.5 shrink-0"
+                    onClick={copyUserId}
+                    disabled={!user?.uid}
+                  >
+                    Copy
+                  </button>
+                </div>
               </div>
             )}
           </div>

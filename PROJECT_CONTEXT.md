@@ -126,6 +126,10 @@ Recent work has included:
 	•	profile avatar selection using bundled default avatars and future-ready avatar asset support
 	•	group-level tag rules for hiding tagged games from Group Collection
 	•	surfacing avatars in session results and history presentation
+	•	addition of a new Tools tab in Group Detail
+	•	implementation of Tools v1 seat randomizer using current group members with include/exclude controls
+	•	introduction of past-session editing from the History tab for correcting saved session records
+	•	initial permissions/model work around owner/moderator-only past-session editing intent
 
 A recurring theme is that the app functionally works, but parts of the code have likely become too centralized or too intertwined, especially in top-level orchestration logic.
 
@@ -180,6 +184,10 @@ Completed work includes:
 	•	profile avatar support using bundled default avatars with modal-based selection
 	•	first version of group-level tag rules via hidden tags in Group Collection
 	•	avatar usage in session results and history displays
+	•	addition of a dedicated Tools tab in Group Detail
+	•	implementation of the first Tools feature: seat randomizer
+	•	implementation of past-session editing from the History tab
+	•	initial support for correcting saved played date, selected/played games, result mode, and placements on past sessions
 
 The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
 
@@ -187,11 +195,9 @@ The codebase is now considered stable enough to move out of the cleanup-first ph
 
 Current Product Roadmap After UI/UX Overhaul
 
-Before starting a major UI/UX redesign, the next planned work is:
-
 1. Analytics / Statistics
-	•	This is now the highest-priority major product feature track.
-	•	Planned first focus is group-facing statistics built from the existing session-history foundation.
+	•	This remains the highest-priority major product feature track.
+	•	Planned first focus is still group-facing statistics built from the session-history foundation.
 	•	Likely early metrics include:
 		•	total sessions played
 		•	most played games
@@ -201,12 +207,24 @@ Before starting a major UI/UX redesign, the next planned work is:
 		•	tag-based insights later once the core analytics layer exists
 	•	Profile/user-facing statistics may follow after group statistics are established.
 
-2. Group-Level Rules / Permissions Follow-Up
+2. Session Participants / Guest Support
+	•	The next major gameplay-oriented feature direction is session-scoped participants.
+	•	The intended model is:
+		•	group members remain the only users used for submission/voting/group permissions
+		•	session participants represent the people who actually participated in one played session
+		•	session participants may later include guest users who are real accounts but are not full group members
+	•	The preferred product direction is to add guests after submission/voting ends, during the closed-session/session-details stage.
+	•	This feature should later support:
+		•	placements/results using session participants
+		•	seat randomizer using session participants
+		•	history and analytics counting those participants correctly
+
+3. Group-Level Rules / Permissions Follow-Up
 	•	Group hidden-tag rules have now been implemented in a first version.
-	•	A likely follow-up is tightening permissions around session-history/result editing so this is limited to owner + moderator roles rather than broad member access.
+	•	A likely follow-up is tightening permissions around session-history/result editing so this is limited to owner + moderator roles rather than broad member access at the Firestore-rule level.
 	•	Any permissions work here should be treated as focused post-overhaul product hardening.
 
-3. Identity / Media Follow-Up
+4. Identity / Media Follow-Up
 	•	Profile avatars have now been implemented using bundled default avatar assets.
 	•	Likely future follow-up work includes:
 		•	group imagery/banners
@@ -214,7 +232,7 @@ Before starting a major UI/UX redesign, the next planned work is:
 		•	image/media storage decisions for a more productized release
 	•	This should remain lightweight until launch direction is clearer.
 
-4. Release Readiness
+5. Release Readiness
 	•	The next non-feature planning phase should focus on what is required for an actual product release.
 	•	This likely includes:
 		•	light regression testing across the overhauled flows
@@ -223,7 +241,7 @@ Before starting a major UI/UX redesign, the next planned work is:
 		•	deployment/store-readiness planning
 		•	small post-overhaul polish fixes
 
-5. Mobile-App Readiness
+6. Mobile-App Readiness
 	•	The app now has a stronger mobile-first shell and is a realistic candidate for later wrapping as a mobile app.
 	•	Current expectation is to continue polishing the web app first, then evaluate Capacitor-based mobile packaging later.
 	•	This is considered viable, but is not yet the immediate implementation priority.
@@ -236,7 +254,8 @@ The preferred sequence is now:
 	1.	close any remaining small post-overhaul polish issues
 	2.	run light regression testing on the overhauled app flows
 	3.	design and implement the first analytics/statistics features
-	4.	review release-readiness gaps before launch-oriented work
+	4.	design the session-participants / guest-support model before coding it broadly
+	5.	review release-readiness gaps before launch-oriented work
 
 The styling/tooling foundation has now been established well enough to support the completed overhaul pass, but future contributors should still prefer extending the shared design-system primitives rather than reintroducing ad hoc one-off styling.
 
@@ -287,6 +306,7 @@ Current Known Follow-Up Items
 The highest-value near-term follow-up items are now:
 	•	run a light regression/testing pass across the newly overhauled app flows
 	•	design and implement the first analytics/statistics surfaces, starting with group statistics
+	•	design Session Participants v1 so future guest users can exist at session scope without becoming group members
 	•	review and tighten permissions around session-history/result editing if needed
 	•	continue small post-overhaul polish fixes only when they are concrete and high-value
 	•	prepare a release-readiness checklist covering media, deployment, permissions, and launch needs
