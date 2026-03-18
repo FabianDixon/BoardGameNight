@@ -31,6 +31,7 @@ export default function ProfileCard({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
+  const [failedAvatarSrcs, setFailedAvatarSrcs] = useState(() => new Set());
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" }); // type: "success" | "error" | "info"
@@ -40,6 +41,8 @@ export default function ProfileCard({
   const selectedAvatar = avatarById(selectedAvatarId);
   const selectedAvatarIcon = avatarIconById(selectedAvatarId);
   const selectedAvatarSrc = selectedAvatar?.src || null;
+  const canRenderSelectedAvatarImage =
+    !!selectedAvatarSrc && !failedAvatarSrcs.has(selectedAvatarSrc);
 
   function setError(text) {
     setMsg({ type: "error", text });
@@ -51,6 +54,18 @@ export default function ProfileCard({
 
   function clearMsg() {
     setMsg({ type: "", text: "" });
+  }
+
+  function markAvatarSrcFailed(src) {
+    const key = String(src || "").trim();
+    if (!key) return;
+
+    setFailedAvatarSrcs((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
   }
 
   async function handleLinkEmailPassword() {
@@ -153,11 +168,12 @@ export default function ProfileCard({
       <div className="ui-surface p-5 md:p-6">
         <div className="flex items-start gap-4">
           <div className="h-16 w-16 overflow-hidden rounded-2xl border border-neutral-600 bg-neutral-900 flex items-center justify-center text-2xl">
-            {selectedAvatarSrc ? (
+            {canRenderSelectedAvatarImage ? (
               <img
                 src={selectedAvatarSrc}
                 alt={selectedAvatar?.label || "Selected avatar"}
                 className="h-full w-full object-cover"
+                onError={() => markAvatarSrcFailed(selectedAvatarSrc)}
               />
             ) : (
               selectedAvatarIcon
@@ -235,11 +251,12 @@ export default function ProfileCard({
               <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="h-11 w-11 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-800 flex items-center justify-center text-2xl shrink-0">
-                    {selectedAvatarSrc ? (
+                    {canRenderSelectedAvatarImage ? (
                       <img
                         src={selectedAvatarSrc}
                         alt={selectedAvatar?.label || "Selected avatar"}
                         className="h-full w-full object-cover"
+                        onError={() => markAvatarSrcFailed(selectedAvatarSrc)}
                       />
                     ) : (
                       selectedAvatarIcon
@@ -420,6 +437,9 @@ export default function ProfileCard({
               <div className="grid grid-cols-5 gap-2">
                 {DEFAULT_AVATARS.map((avatar) => {
                   const selected = avatar.id === selectedAvatarId;
+                  const avatarSrc = avatar?.src || null;
+                  const canRenderAvatarImage =
+                    !!avatarSrc && !failedAvatarSrcs.has(avatarSrc);
                   return (
                     <button
                       key={avatar.id}
@@ -436,14 +456,15 @@ export default function ProfileCard({
                       }}
                       title={avatar.label || avatar.id}
                     >
-                      {avatar.src ? (
+                      {canRenderAvatarImage ? (
                         <img
-                          src={avatar.src}
+                          src={avatarSrc}
                           alt={avatar.label || avatar.id}
                           className="h-full w-full object-contain p-1"
+                          onError={() => markAvatarSrcFailed(avatarSrc)}
                         />
                       ) : (
-                        avatar.icon
+                        avatar?.icon || "🎲"
                       )}
                     </button>
                   );
