@@ -121,9 +121,8 @@ export default function SeatRandomizerTool({
   };
 
   return (
-    <div className="ui-surface p-4 md:p-5 space-y-4">
+    <div className="space-y-4">
       <div>
-        <h3 className="text-xl font-semibold text-white">Seat randomizer</h3>
         <p className="text-sm text-neutral-400 mt-1">
           Pick who is in for this shuffle, then generate a random seating/play order.
         </p>

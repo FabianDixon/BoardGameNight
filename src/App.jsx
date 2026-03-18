@@ -3150,6 +3150,7 @@ export default function App() {
                     )}
                     toolsNode={(
                       <GroupToolsPanel
+                        currentGroupId={currentGroupId}
                         members={members}
                         memberProfilesById={memberProfilesById}
                         sessionParticipantIds={currentSessionParticipantIds}
