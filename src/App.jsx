@@ -395,19 +395,23 @@ export default function App() {
     const unsub = onSnapshot(ref, async (snap) => {
       const ids = snap.docs.map((d) => d.id);
 
-      const groupDocs = await Promise.all(
+      const groupDocsRaw = await Promise.all(
         ids.map(async (id) => {
           const gSnap = await getDoc(doc(db, "groups", id));
-          return { id, ...(gSnap.exists() ? gSnap.data() : {}) };
+          if (!gSnap.exists()) return null;
+          return { id, ...gSnap.data() };
         })
       );
+
+      const groupDocs = groupDocsRaw.filter(Boolean);
+      const validIds = groupDocs.map((group) => group.id);
 
       setMyGroups(groupDocs);
 
       setCurrentGroupId((prev) => {
-        if (!prev && ids.length > 0) return ids[0];
-        if (prev && ids.length > 0 && !ids.includes(prev)) return ids[0];
-        if (ids.length === 0) return "";
+        if (!prev && validIds.length > 0) return validIds[0];
+        if (prev && validIds.length > 0 && !validIds.includes(prev)) return validIds[0];
+        if (validIds.length === 0) return "";
         return prev;
       });
     });
