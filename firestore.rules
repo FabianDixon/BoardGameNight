@@ -90,7 +90,9 @@ match /games/{gameId} {
     )
   );
 
-  allow delete: if signedIn();
+  allow delete: if signedIn()
+    && ('createdBy' in resource.data)
+    && resource.data.createdBy == request.auth.uid;
 }
 
 // -------------------------
@@ -159,13 +161,62 @@ match /groups/{groupId}/members/{userId} {
   allow read: if isGroupMember(groupId)
     || (isSelf(userId) && exists(/databases/$(database)/documents/groups/$(groupId)));
 
+  function isValidMemberRole(role) {
+    return role is string && role in ["owner", "moderator", "member"];
+  }
+
+  function hasValidMemberProfileFields() {
+    return (!('nickname' in request.resource.data) || request.resource.data.nickname is string)
+      && (!('avatarId' in request.resource.data) || request.resource.data.avatarId is string)
+      && (!('joinedAt' in request.resource.data) || request.resource.data.joinedAt is number)
+      && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is number);
+  }
+
+  function hasValidOptionalUserIdFieldForCreate() {
+    return !('userId' in request.resource.data)
+      || (
+        request.resource.data.userId is string
+        && request.resource.data.userId == userId
+        && request.resource.data.userId == request.auth.uid
+      );
+  }
+
   allow create: if signedIn()
     && request.auth.uid == userId
-    && exists(/databases/$(database)/documents/groups/$(groupId));
+    && exists(/databases/$(database)/documents/groups/$(groupId))
+    && request.resource.data.keys().hasOnly([
+      'role', 'nickname', 'avatarId', 'joinedAt', 'updatedAt', 'userId'
+    ])
+    && isValidMemberRole(request.resource.data.role)
+    && hasValidMemberProfileFields()
+    && hasValidOptionalUserIdFieldForCreate();
+
+  function isSafeSelfMemberUpdate() {
+    return request.auth.uid == userId
+      && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        'nickname', 'avatarId', 'updatedAt'
+      ])
+      && request.resource.data.role == resource.data.role
+      && hasValidMemberProfileFields()
+      && (!('userId' in resource.data) || request.resource.data.userId == resource.data.userId);
+  }
+
+  function isValidOwnerMemberUpdate() {
+    return isGroupOwner(groupId)
+      && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        'role', 'nickname', 'avatarId', 'updatedAt'
+      ])
+      && (
+        request.resource.data.role == resource.data.role
+        || isValidMemberRole(request.resource.data.role)
+      )
+      && hasValidMemberProfileFields()
+      && (!('userId' in resource.data) || request.resource.data.userId == resource.data.userId);
+  }
 
   allow update: if signedIn() && (
-    request.auth.uid == userId
-    || isGroupOwner(groupId)
+    isSafeSelfMemberUpdate()
+    || isValidOwnerMemberUpdate()
   );
 
   allow delete: if signedIn() && (
@@ -404,7 +455,14 @@ match /groups/{groupId}/plays/{playId} {
     && request.auth.uid == request.resource.data.createdBy
     && isValidPlayRecordShape();
 
+  function canEditPlayRecord() {
+    return isGroupOwner(groupId)
+      || memberRole(groupId) == "moderator"
+      || (resource.data.createdBy != null && request.auth.uid == resource.data.createdBy);
+  }
+
   allow update: if isGroupMember(groupId)
+    && canEditPlayRecord()
     && isValidPlayRecordShape()
     && request.resource.data.groupId == resource.data.groupId
     && request.resource.data.voteId == resource.data.voteId

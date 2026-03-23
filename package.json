@@ -8,6 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test:rules": "firebase emulators:exec --project demo-boardgame-night --only firestore \"node --test tests/rules/firestore.rules.test.mjs\"",
+    "test:rules:verbose": "firebase emulators:exec --project demo-boardgame-night --only firestore \"node --test --test-reporter=spec tests/rules/firestore.rules.test.mjs\"",
     "migrate:plays:legacy": "node scripts/migrate-legacy-plays.mjs --dry-run",
     "cleanup:firestore:noise": "node scripts/cleanup-firestore-noise.mjs --dry-run",
     "cleanup:group-orphans": "node scripts/cleanup-orphan-group-memberships.mjs --dry-run"
@@ -17,6 +19,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@eslint/js": "^9.39.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
@@ -25,7 +28,9 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
+    "firebase": "^11.4.0",
     "firebase-admin": "^13.7.0",
+    "firebase-tools": "^14.5.0",
     "globals": "^16.5.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.17",
