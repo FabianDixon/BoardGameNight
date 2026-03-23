@@ -204,6 +204,7 @@ export default function App() {
   const [nickname, setNickname] = useState("");
 
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+  const [savedAccountRequiredOpen, setSavedAccountRequiredOpen] = useState(false);
 
   const games = useGames(user);
   const [selectedGame, setSelectedGame] = useState(null);
@@ -283,6 +284,7 @@ export default function App() {
   const [isDeletingGame, setIsDeletingGame] = useState(false);
 
   const [returnCtx, setReturnCtx] = useState(null);
+  const isTemporaryAccount = !!user?.isAnonymous;
 
   // Derived: current group document (null if not found)
   // NOTE: Can be null if currentGroupId is set but group was removed from myGroups.
@@ -493,6 +495,15 @@ export default function App() {
       setGroupView(GROUP_VIEW.PICKER);
     }
   }, [activeTab, groupView, hasValidGroupSelection]);
+
+  useEffect(() => {
+    if (!isTemporaryAccount) return;
+    if (activeTab !== APP_TAB.GROUP) return;
+
+    setActiveTab(APP_TAB.LIBRARY);
+    setGroupView(GROUP_VIEW.PICKER);
+    setSavedAccountRequiredOpen(true);
+  }, [isTemporaryAccount, activeTab]);
 
   // Sync nickname to all group memberships when profile updates
   useEffect(() => {
@@ -979,8 +990,28 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  const goToSavedAccountSetup = useCallback((intent = "create") => {
+    setSavedAccountRequiredOpen(false);
+    setSelectedGame(null);
+    setReturnCtx(null);
+    setGroupView(GROUP_VIEW.PICKER);
+    setActiveTab(APP_TAB.PROFILE);
+
+    if (intent === "signin") {
+      showToast("Sign in to a saved account to continue.", "info");
+    } else {
+      showToast("Create a saved account to continue.", "info");
+    }
+  }, [showToast]);
+
   const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds, resultMode, placements, participantIds }) => {
     if (!user || !currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) {
+      return;
+    }
+
+    if (user.isAnonymous) {
+      showToast("Saved account required for session history.", "info");
+      setSavedAccountRequiredOpen(true);
       return;
     }
 
@@ -1055,6 +1086,12 @@ export default function App() {
   const savePastSessionPlay = useCallback(
     async (playRecord, { playedAt, winnerGameId, playedGameIds, resultMode, placements, participantIds }) => {
       if (!user || !currentGroupId || !playRecord?.id) return;
+
+      if (user.isAnonymous) {
+        showToast("Saved account required for session history.", "info");
+        setSavedAccountRequiredOpen(true);
+        return;
+      }
 
       if (!canEditPastSession) {
         showToast("Only the group owner or a moderator can edit session history.", "error");
@@ -1317,6 +1354,12 @@ export default function App() {
     async (groupId, gameId, shouldShare) => {
       if (!user) return;
 
+      if (user.isAnonymous) {
+        showToast("Saved account required for group sharing.", "info");
+        setSavedAccountRequiredOpen(true);
+        return;
+      }
+
       const gid = safeString(groupId).trim();
       const gmid = safeString(gameId).trim();
       if (!gid || !gmid) return;
@@ -1480,6 +1523,11 @@ export default function App() {
   async function rateGame(gameId, value) {
     if (!user) return;
 
+    if (user.isAnonymous) {
+      showToast("Create a saved account to rate games.", "info");
+      return;
+    }
+
     // enforce 0.5 steps + range on client
     const v = Math.round(Number(value) * 2) / 2;
     if (!(v >= 0.5 && v <= 5)) return;
@@ -1623,6 +1671,12 @@ export default function App() {
       showToast("Signing in… try again in a second.", "info");
       return null;
     }
+
+    if (user.isAnonymous) {
+      showToast("Saved account required for groups and sessions.", "info");
+      setSavedAccountRequiredOpen(true);
+      return null;
+    }
   
     const groupName = safeString(name).trim();
     if (!groupName) {
@@ -1678,6 +1732,12 @@ export default function App() {
   async function joinGroup(groupId) {
     if (!user) {
       showToast("Signing in… try again in a second.", "info");
+      return false;
+    }
+
+    if (user.isAnonymous) {
+      showToast("Saved account required for groups and sessions.", "info");
+      setSavedAccountRequiredOpen(true);
       return false;
     }
 
@@ -1826,6 +1886,12 @@ export default function App() {
 
   async function togglePlayedOverride(gameId, playedOverride) {
     if (!user || !currentGroupId) return;
+
+    if (user.isAnonymous) {
+      showToast("Saved account required for group session features.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
   
     if (currentGroup?.ownerId !== user.uid) {
       showToast("Only the group owner can change this.", "error");
@@ -1857,6 +1923,11 @@ export default function App() {
 
   async function castVote(gameId) {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+    if (user.isAnonymous) {
+      showToast("Saved account required for voting.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
     if (activeVote.status !== VOTE_STATUS.OPEN) return;
 
     const candidates = activeVote.candidates || [];
@@ -1875,6 +1946,11 @@ export default function App() {
 
   const closeVote = useCallback(async (opts = {}) => {
     if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+    if (user.isAnonymous) {
+      showToast("Saved account required for voting.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
     if (activeVote.status !== VOTE_STATUS.OPEN) return;
 
     // ✅ only block manual calls; allow auto calls
@@ -2044,6 +2120,12 @@ export default function App() {
   async function callSession() {
     if (!user || !currentGroupId) return;
 
+    if (user.isAnonymous) {
+      showToast("Saved account required for sessions.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
+
     if (activeVote && (activeVote.status === VOTE_STATUS.COLLECTING || activeVote.status === VOTE_STATUS.OPEN)) {
       showToast("A session is already active.", "info");
       return;
@@ -2078,6 +2160,12 @@ export default function App() {
 
   async function submitToSession(gameId) {
     if (!user || !currentGroupId || !activeVote?.id) return;
+
+    if (user.isAnonymous) {
+      showToast("Saved account required for sessions.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
 
     const gid = String(gameId || "").trim();
     if (!gid) {
@@ -2215,6 +2303,12 @@ export default function App() {
   async function submitNoSubmission() {
     if (!user || !currentGroupId || !activeVote?.id) return;
 
+    if (user.isAnonymous) {
+      showToast("Saved account required for sessions.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
+
     if (activeVote.status !== VOTE_STATUS.COLLECTING) {
       showToast("Submissions are closed.", "error");
       return;
@@ -2316,6 +2410,11 @@ export default function App() {
   const startVoting = useCallback(
     async ({ allowMember = false, silent = false } = {}) => {
       if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+      if (user.isAnonymous) {
+        if (!silent) showToast("Saved account required for voting.", "info");
+        setSavedAccountRequiredOpen(true);
+        return;
+      }
       if (activeVote.status !== VOTE_STATUS.COLLECTING) return;
 
       const isVoteOwner = activeVote.createdBy === user.uid;
@@ -2539,6 +2638,12 @@ export default function App() {
   async function exportSessionData(voteId) {
     if (!user || !currentGroupId || !voteId) return;
 
+    if (user.isAnonymous) {
+      showToast("Saved account required for exports.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
+
     try {
       const payload = await buildSessionExportPayload(voteId);
 
@@ -2566,6 +2671,12 @@ export default function App() {
 
   async function emailSessionData(voteId) {
     if (!user || !currentGroupId || !voteId) return;
+
+    if (user.isAnonymous) {
+      showToast("Saved account required for exports.", "info");
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
 
     try {
       const payload = await buildSessionExportPayload(voteId);
@@ -2606,6 +2717,11 @@ export default function App() {
   ];
 
   function handleTopLevelTabClick(nextTab) {
+    if (nextTab === APP_TAB.GROUP && isTemporaryAccount) {
+      setSavedAccountRequiredOpen(true);
+      return;
+    }
+
     setActiveTab(nextTab);
     setSelectedGame(null);
     setSearchQuery("");
@@ -2690,6 +2806,44 @@ export default function App() {
           >
             Go to account setup
           </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={savedAccountRequiredOpen}
+        title="Saved account required"
+        onClose={() => setSavedAccountRequiredOpen(false)}
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-300">
+            Groups, sessions, voting, and shared history require a saved account.
+          </p>
+          <p className="text-xs text-neutral-500">
+            Temporary accounts can keep browsing the library and game details.
+          </p>
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              className="ui-btn-primary"
+              onClick={() => goToSavedAccountSetup("create")}
+            >
+              Create account
+            </button>
+            <button
+              type="button"
+              className="ui-btn-secondary"
+              onClick={() => goToSavedAccountSetup("signin")}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className="ui-btn-ghost px-3 py-2 text-sm"
+              onClick={() => setSavedAccountRequiredOpen(false)}
+            >
+              Not now
+            </button>
+          </div>
         </div>
       </Modal>
 
@@ -2792,6 +2946,8 @@ export default function App() {
               game={selectedGameFresh}
               inCollection={myCollection.has(selectedGameFresh.id)}
               myRating={myRatings.get(selectedGameFresh.id) || null}
+              canRate={!isTemporaryAccount}
+              onRequireSavedAccount={() => goToSavedAccountSetup("create")}
               onBack={() => {
                 setSelectedGame(null);
 
@@ -2819,6 +2975,10 @@ export default function App() {
                   onCreateGroup={createGroup}
                   onJoinGroup={joinGroup}
                   onOpenGroup={() => {
+                    if (isTemporaryAccount) {
+                      setSavedAccountRequiredOpen(true);
+                      return;
+                    }
                     setGroupView(GROUP_VIEW.DETAIL);
                     setGroupTab(GROUP_TAB.COLLECTION);
                   }}
@@ -3340,6 +3500,8 @@ export default function App() {
           game={selectedGameFresh}
           inCollection={myCollection.has(selectedGameFresh.id)}
           myRating={myRatings.get(selectedGameFresh.id) || null}
+          canRate={!isTemporaryAccount}
+          onRequireSavedAccount={() => goToSavedAccountSetup("create")}
           onBack={() => setSelectedGame(null)}
           onRate={(value) => rateGame(selectedGameFresh.id, value)}
           onAdd={() => addToCollection(selectedGameFresh.id)}

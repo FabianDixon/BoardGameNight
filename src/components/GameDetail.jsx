@@ -11,6 +11,8 @@ export default function GameDetail({
   game,
   inCollection,
   myRating,
+  canRate = true,
+  onRequireSavedAccount,
   onBack,
   onRate,
   onAdd,
@@ -109,7 +111,20 @@ export default function GameDetail({
           <div className="space-y-3 pt-1">
             <div className="space-y-2">
               <p className="text-sm text-neutral-300">Rate this game</p>
-              <StarRating value={myRating || 0} onChange={(v) => onRate(v)} readOnly={false} />
+              {canRate ? (
+                <StarRating value={myRating || 0} onChange={(v) => onRate(v)} readOnly={false} />
+              ) : (
+                <div className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 space-y-2">
+                  <p className="text-sm text-neutral-300">Create an account to rate games.</p>
+                  <button
+                    type="button"
+                    className="ui-btn-secondary px-3 py-1.5 text-xs"
+                    onClick={onRequireSavedAccount}
+                  >
+                    Create account to rate games
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-700/70 pt-3">
