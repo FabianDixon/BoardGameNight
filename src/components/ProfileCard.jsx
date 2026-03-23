@@ -4,6 +4,7 @@ import {
   EmailAuthProvider,
   getAuth,
   linkWithCredential,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
@@ -25,11 +26,11 @@ export default function ProfileCard({
 }) {
   const auth = useMemo(() => getAuth(), []);
 
-  // Start in signin mode if localStorage indicates the user came from landing page signin button
-  const defaultMode = typeof window !== 'undefined' && localStorage.getItem("bgng_auth_choice") === "signin" ? "signin" : "link";
-  const [mode, setMode] = useState(defaultMode); // "link" | "signin"
+  const [mode, setMode] = useState("link"); // "link" | "signin"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmSwitchOpen, setConfirmSwitchOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [failedAvatarSrcs, setFailedAvatarSrcs] = useState(() => new Set());
 
@@ -89,8 +90,9 @@ export default function ProfileCard({
       const code = err?.code || "";
 
       if (code === "auth/email-already-in-use") {
-        setError("That email is already in use. Use Sign in instead.");
+        setError("That email already belongs to a saved account. Switch to Sign in to continue with that account.");
         setMode("signin");
+        setConfirmSwitchOpen(false);
       } else if (code === "auth/invalid-email") {
         setError("That email looks invalid.");
       } else if (code === "auth/weak-password") {
@@ -116,19 +118,63 @@ export default function ProfileCard({
     if (!e) return setError("Please enter your email.");
     if (!p) return setError("Please enter your password.");
 
+    if (isAnonymous && !confirmSwitchOpen) {
+      setConfirmSwitchOpen(true);
+      setMsg({
+        type: "info",
+        text: "Signing in will switch from this temporary account to the saved account for this email.",
+      });
+      return;
+    }
+
     setBusy(true);
     try {
       await signInWithEmailAndPassword(auth, e, p);
       setSuccess("Signed in ✅");
       setPassword("");
+      setConfirmSwitchOpen(false);
     } catch (err) {
       const code = err?.code || "";
-      if (code === "auth/user-not-found" || code === "auth/wrong-password") {
+      // auth/invalid-credential is the v9 SDK consolidation of user-not-found + wrong-password
+      if (
+        code === "auth/invalid-credential" ||
+        code === "auth/user-not-found" ||
+        code === "auth/wrong-password"
+      ) {
         setError("Wrong email or password.");
       } else if (code === "auth/invalid-email") {
         setError("That email looks invalid.");
+      } else if (code === "auth/too-many-requests") {
+        setError("Too many failed attempts. Please wait a moment before trying again.");
+      } else if (code === "auth/user-disabled") {
+        setError("This account has been disabled.");
       } else {
-        setError("Sign in failed. Please try again.");
+        console.error("[ProfileCard] sign-in error:", code, err?.message);
+        setError(`Sign in failed (${code || "unknown"}). Please try again.`);
+      }
+      setConfirmSwitchOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendPasswordReset() {
+    clearMsg();
+    const e = email.trim();
+    if (!e) return setError("Please enter your email.");
+    setBusy(true);
+    try {
+      await sendPasswordResetEmail(auth, e);
+      setSuccess("If an account exists for that email, a reset link has been sent.");
+      setResetOpen(false);
+    } catch (err) {
+      const code = err?.code || "";
+      if (code === "auth/invalid-email") {
+        setError("That email looks invalid.");
+      } else if (code === "auth/too-many-requests") {
+        setError("Too many requests. Please wait a moment before trying again.");
+      } else {
+        setError("Could not send reset email. Check your connection and try again.");
       }
     } finally {
       setBusy(false);
@@ -203,6 +249,12 @@ export default function ProfileCard({
                   >
                     Copy
                   </button>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">Account state</p>
+                  <span className={isAnonymous ? "ui-chip-yellow" : "ui-chip-green"}>
+                    {isAnonymous ? "Temporary account" : "Saved account"}
+                  </span>
                 </div>
               </div>
             )}
@@ -321,7 +373,7 @@ export default function ProfileCard({
                     <span className="ui-chip-yellow">Temporary account</span>
                   </div>
                   <p className="text-sm text-neutral-300">
-                    You’re using a temporary account. Save it so you can sign in again on other devices.
+                    You’re using a temporary account. Create a saved account to keep this identity and sign in again on other devices.
                   </p>
                 </div>
 
@@ -332,6 +384,8 @@ export default function ProfileCard({
                       onClick={() => {
                         clearMsg();
                         setMode("link");
+                        setConfirmSwitchOpen(false);
+                        setResetOpen(false);
                       }}
                       disabled={busy}
                     >
@@ -343,6 +397,8 @@ export default function ProfileCard({
                       onClick={() => {
                         clearMsg();
                         setMode("signin");
+                        setConfirmSwitchOpen(false);
+                        setResetOpen(false);
                       }}
                       disabled={busy}
                     >
@@ -355,23 +411,106 @@ export default function ProfileCard({
                       className="py-2.5"
                       placeholder="Email"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        setConfirmSwitchOpen(false);
+                      }}
                       autoComplete="email"
                       disabled={busy}
                     />
 
-                    <input
-                      className="py-2.5"
-                      placeholder={mode === "signin" ? "Password" : "Password (min 6 chars)"}
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                      disabled={busy}
-                    />
+                    {!resetOpen && (
+                      <input
+                        className="py-2.5"
+                        placeholder={mode === "signin" ? "Password" : "Password (min 6 chars)"}
+                        type="password"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setConfirmSwitchOpen(false);
+                        }}
+                        autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                        disabled={busy}
+                      />
+                    )}
                   </div>
 
-                  {msg.text && (
+                  {mode === "signin" && !confirmSwitchOpen && !resetOpen && (
+                    <button
+                      type="button"
+                      className="text-xs text-neutral-400 hover:text-neutral-200 underline underline-offset-2 self-start"
+                      onClick={() => { clearMsg(); setResetOpen(true); }}
+                      disabled={busy}
+                    >
+                      Forgot password?
+                    </button>
+                  )}
+
+                  {mode === "signin" && resetOpen && (
+                    <div className="rounded-xl border border-neutral-700 bg-neutral-800/40 p-3 space-y-3">
+                      <p className="text-sm text-neutral-300">
+                        Enter your email above and we'll send a reset link if an account exists for it.
+                      </p>
+                      {msg.text && (
+                        <p
+                          className={`text-sm ${
+                            msg.type === "error" ? "text-red-400" : "text-emerald-300"
+                          }`}
+                        >
+                          {msg.text}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="ui-btn-secondary text-xs px-3 py-1.5"
+                          onClick={() => { setResetOpen(false); clearMsg(); }}
+                          disabled={busy}
+                        >
+                          Back to sign in
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn-primary text-xs px-3 py-1.5"
+                          onClick={handleSendPasswordReset}
+                          disabled={busy}
+                        >
+                          {busy ? "Sending…" : "Send reset email"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {mode === "signin" && confirmSwitchOpen && !resetOpen && (
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+                      <p className="text-sm text-amber-100">
+                        Confirm account switch: this will sign out of your temporary account and switch to the saved account for this email.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="ui-btn-secondary text-xs px-3 py-1.5"
+                          onClick={() => {
+                            setConfirmSwitchOpen(false);
+                            clearMsg();
+                          }}
+                          disabled={busy}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn-primary text-xs px-3 py-1.5"
+                          onClick={handleSignIn}
+                          disabled={busy}
+                        >
+                          Confirm & sign in
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!resetOpen && msg.text && (
                     <p
                       className={`text-sm ${
                         msg.type === "error"
@@ -393,15 +532,15 @@ export default function ProfileCard({
                     >
                       {busy ? "Saving…" : "Create"}
                     </button>
-                  ) : (
+                  ) : !resetOpen ? (
                     <button
                       className="ui-btn-primary px-3 py-1.5 text-sm"
                       onClick={handleSignIn}
                       disabled={busy}
                     >
-                      {busy ? "Signing in…" : "Sign in"}
+                      {busy ? "Signing in…" : confirmSwitchOpen ? "Review confirmation" : "Sign in"}
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
             )}

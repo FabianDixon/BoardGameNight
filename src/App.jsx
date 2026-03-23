@@ -2658,7 +2658,7 @@ export default function App() {
         dismissible={false}
       >
         <p className="text-sm text-gray-300 mb-4">
-          Sign in to keep your data across devices, or continue as a guest.
+          Continue with a temporary account to explore the app, or start from Profile to create or sign in to a saved account.
         </p>
 
         <div className="flex flex-col gap-2">
@@ -2673,17 +2673,22 @@ export default function App() {
             Continue as guest
           </button>
 
+          <p className="text-xs text-neutral-500 px-1">
+            Guest mode starts with a temporary account. You can later create a saved account from Profile without changing this identity.
+          </p>
+
           <button
             className="ui-btn-secondary"
             onClick={() => {
               localStorage.setItem("bgng_auth_choice", "signin");
               setShowAuthPrompt(false);
               setActiveTab(APP_TAB.PROFILE);
-              // Sign in as guest so ProfileCard can appear
+              // Start with a temporary account so Profile can offer
+              // create-account linking or explicit saved-account sign-in.
               signInAnonymously(auth);
             }}
           >
-            Sign in
+            Go to account setup
           </button>
         </div>
       </Modal>
