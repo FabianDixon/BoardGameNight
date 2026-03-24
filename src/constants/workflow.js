@@ -29,6 +29,7 @@ export const GROUP_TAB = {
   COLLECTION: "collection",
   VOTING: "voting",
   HISTORY: "history",
+  STATISTICS: "statistics",
   TOOLS: "tools",
   SETTINGS: "settings",
   MANAGE: "manage",

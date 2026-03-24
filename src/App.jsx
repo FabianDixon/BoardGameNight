@@ -45,6 +45,7 @@ import GameDetail from "./components/GameDetail";
 import GroupDetail from "./components/GroupDetail";
 import GroupsPanel from "./components/GroupsPanel";
 import VotingPanel from "./components/VotingPanel";
+import GroupStatisticsPanel from "./components/GroupStatisticsPanel";
 import GroupToolsPanel from "./components/GroupToolsPanel";
 import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
@@ -3323,6 +3324,13 @@ export default function App() {
                         members={members}
                         memberProfilesById={memberProfilesById}
                         sessionParticipantIds={currentSessionParticipantIds}
+                        participantSummaryById={participantSummaryById}
+                      />
+                    )}
+                    statisticsNode={(
+                      <GroupStatisticsPanel
+                        sessionHistory={normalizedSessionHistory}
+                        games={games}
                         participantSummaryById={participantSummaryById}
                       />
                     )}

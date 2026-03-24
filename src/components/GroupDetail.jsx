@@ -16,6 +16,7 @@ export default function GroupDetail({
   onToast,
   votingNode, 
   historyNode,
+  statisticsNode,
   toolsNode,
   settingsNode,
   canEditNewness,
@@ -135,6 +136,15 @@ export default function GroupDetail({
             type="button"
           >
             History
+          </button>
+          <button
+            className={`ui-segment ${
+              groupTab === GROUP_TAB.STATISTICS ? "ui-pill-active" : "ui-pill-inactive"
+            } w-full justify-center sm:w-auto`}
+            onClick={() => setGroupTab(GROUP_TAB.STATISTICS)}
+            type="button"
+          >
+            Statistics
           </button>
           <button
             className={`ui-segment ${
@@ -348,6 +358,13 @@ export default function GroupDetail({
         historyNode || (
           <div className="ui-surface p-4">
             <p className="text-sm text-neutral-300">No history available yet.</p>
+          </div>
+        )
+      )}
+      {groupTab === GROUP_TAB.STATISTICS && (
+        statisticsNode || (
+          <div className="ui-surface p-4">
+            <p className="text-sm text-neutral-300">No statistics available yet.</p>
           </div>
         )
       )}
