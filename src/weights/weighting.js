@@ -45,7 +45,7 @@ export const DEFAULT_WEIGHTS = {
   
     const lastWonSession = Number(p.lastWonSession ?? -1);
     const recentlyWon =
-      lastWonSession >= 0 && (sessionIndex - lastWonSession) < weights.recentWinSessions;
+      lastWonSession >= 0 && (sessionIndex - lastWonSession) <= weights.recentWinSessions;
   
     const bonus =
       (isNew ? weights.wNewGame : 0) +
