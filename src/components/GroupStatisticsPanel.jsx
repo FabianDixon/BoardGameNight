@@ -46,6 +46,7 @@ export default function GroupStatisticsPanel({
     const appearances = new Map();
     const firstPlaceCounts = new Map();
     const podiumCounts = new Map();
+    const medalCounts = new Map();
 
     let mostRecentSessionAt = null;
     let coopSessions = 0;
@@ -109,6 +110,12 @@ export default function GroupStatisticsPanel({
           const place = Number(entry?.place);
           if (!userId || !Number.isFinite(place) || place < 1) continue;
 
+          const medalRow = medalCounts.get(userId) || { gold: 0, silver: 0, bronze: 0 };
+          if (place === 1) medalRow.gold += 1;
+          if (place === 2) medalRow.silver += 1;
+          if (place === 3) medalRow.bronze += 1;
+          medalCounts.set(userId, medalRow);
+
           if (place === 1) {
             firstPlaceCounts.set(userId, (firstPlaceCounts.get(userId) || 0) + 1);
           }
@@ -143,6 +150,22 @@ export default function GroupStatisticsPanel({
         return a.label.localeCompare(b.label);
       });
 
+    const medalTable = [...medalCounts.entries()]
+      .map(([userId, medals]) => ({
+        userId,
+        label: participantSummaryById?.[userId]?.label || truncateUserId(userId),
+        gold: medals.gold || 0,
+        silver: medals.silver || 0,
+        bronze: medals.bronze || 0,
+      }))
+      .filter((row) => row.gold > 0 || row.silver > 0 || row.bronze > 0)
+      .sort((a, b) => {
+        if (b.gold !== a.gold) return b.gold - a.gold;
+        if (b.silver !== a.silver) return b.silver - a.silver;
+        if (b.bronze !== a.bronze) return b.bronze - a.bronze;
+        return a.label.localeCompare(b.label);
+      });
+
     return {
       totalSessions,
       totalUniqueGames: uniqueGames.size,
@@ -153,6 +176,7 @@ export default function GroupStatisticsPanel({
       coopWinRate: coopSessions > 0 ? coopWins / coopSessions : 0,
       mostPlayedGames,
       playerResults,
+      medalTable,
     };
   }, [sessionHistory, gameTitleById, participantSummaryById]);
 
@@ -243,6 +267,37 @@ export default function GroupStatisticsPanel({
                     <td className="py-2 pr-3 text-neutral-300">{row.appearances}</td>
                     <td className="py-2 pr-3 text-neutral-300">{row.firstPlaces}</td>
                     <td className="py-2 text-neutral-300">{row.podiums}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="ui-surface p-4 md:p-5 space-y-3">
+        <h4 className="text-lg font-semibold text-white">Medal Table</h4>
+        <p className="text-xs text-neutral-500">Medals are counted from ranked session placements only.</p>
+        {stats.medalTable.length === 0 ? (
+          <p className="text-sm text-neutral-400">No ranked medal placements yet.</p>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-neutral-500 border-b border-neutral-700">
+                  <th className="py-2 pr-3 font-medium">Player</th>
+                  <th className="py-2 pr-3 font-medium">🥇</th>
+                  <th className="py-2 pr-3 font-medium">🥈</th>
+                  <th className="py-2 font-medium">🥉</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.medalTable.map((row) => (
+                  <tr key={`medal-${row.userId}`} className="border-b border-neutral-800">
+                    <td className="py-2 pr-3 text-neutral-200">{row.label}</td>
+                    <td className="py-2 pr-3 text-neutral-300">{row.gold}</td>
+                    <td className="py-2 pr-3 text-neutral-300">{row.silver}</td>
+                    <td className="py-2 text-neutral-300">{row.bronze}</td>
                   </tr>
                 ))}
               </tbody>
