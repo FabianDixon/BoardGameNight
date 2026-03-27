@@ -709,14 +709,13 @@ function VotingPanelInner({
       return false;
     }
 
-    let added = false;
-    setHistoryParticipantIds((prev) => {
-      if (prev.includes(id)) return prev;
-      added = true;
-      return normalizeParticipantIds([...prev, id], groupMemberIds);
-    });
+    if (historyParticipantIds.includes(id)) return false;
 
-    return added;
+    setHistoryParticipantIds((prev) =>
+      normalizeParticipantIds([...prev, id], groupMemberIds)
+    );
+
+    return true;
   }
 
   function removeParticipant(userId) {

@@ -148,6 +148,14 @@ function memberDisplayName(member, fallbackUserId = "") {
   return value.length <= 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
+function resolveAvatar(avatarId) {
+  return (
+    avatarById(avatarId) ||
+    avatarById(DEFAULT_AVATAR_ID) ||
+    { label: "Avatar", icon: avatarIconById(DEFAULT_AVATAR_ID), src: null }
+  );
+}
+
 // ---------- component ----------
 
 export default function PastSessionEditModal({
@@ -318,14 +326,13 @@ export default function PastSessionEditModal({
       return false;
     }
 
-    let added = false;
-    setParticipantIds((prev) => {
-      if (prev.includes(id)) return prev;
-      added = true;
-      return normalizeParticipantIds([...prev, id], groupMemberIds);
-    });
+    if (participantIds.includes(id)) return false;
 
-    return added;
+    setParticipantIds((prev) =>
+      normalizeParticipantIds([...prev, id], groupMemberIds)
+    );
+
+    return true;
   }
 
   function removeParticipant(userId) {
@@ -488,7 +495,7 @@ export default function PastSessionEditModal({
             ) : (
               <div className="flex flex-wrap gap-2">
                 {participantOptions.map((participant) => {
-                  const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
+                  const avatar = resolveAvatar(participant.avatarId);
                   return (
                     <span
                       key={`selected-participant-${participant.userId}`}
@@ -567,7 +574,7 @@ export default function PastSessionEditModal({
                   const userId = String(result?.userId || "").trim();
                   if (!userId) return null;
                   const alreadySelected = participantIds.includes(userId);
-                  const avatar = avatarById(result?.avatarId || DEFAULT_AVATAR_ID);
+                  const avatar = resolveAvatar(result?.avatarId);
 
                   return (
                     <div
@@ -669,7 +676,7 @@ export default function PastSessionEditModal({
                 const selectedPlacement = placements.find(
                   (e) => e.userId === participant.userId
                 );
-                const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
+                const avatar = resolveAvatar(participant.avatarId);
 
                 return (
                   <div
@@ -739,7 +746,7 @@ export default function PastSessionEditModal({
                 const checked = placements.some(
                   (e) => e.userId === participant.userId
                 );
-                const avatar = avatarById(participant.avatarId || DEFAULT_AVATAR_ID);
+                const avatar = resolveAvatar(participant.avatarId);
 
                 return (
                   <label
