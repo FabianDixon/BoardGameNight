@@ -199,6 +199,19 @@ function normalizeParticipantPlacements(placements, resultMode, participantIds) 
   return normalized.filter((entry) => allowed.has(entry.userId));
 }
 
+function normalizeSessionMetrics(metrics) {
+  const normalized = [];
+
+  for (const entry of Array.isArray(metrics) ? metrics : []) {
+    const name = String(entry?.name || "").trim();
+    const value = Number(entry?.value);
+    if (!name || !Number.isFinite(value)) continue;
+    normalized.push({ name, value });
+  }
+
+  return normalized;
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -843,6 +856,7 @@ export default function App() {
           participantIds,
           playedGameIds: normalizePlayedGameIds(data.playedGameIds, winnerGameId),
           placements: normalizeParticipantPlacements(data.placements, resultMode, participantIds),
+          metrics: normalizeSessionMetrics(data.metrics),
         });
       },
       (err) => {
@@ -879,6 +893,7 @@ export default function App() {
         participantIds,
         playedGameIds: normalizePlayedGameIds(play?.playedGameIds, winnerGameId),
         placements: normalizeParticipantPlacements(play?.placements, resultMode, participantIds),
+        metrics: normalizeSessionMetrics(play?.metrics),
       };
     });
   }, [sessionHistory, groupMemberIds]);
@@ -1005,7 +1020,7 @@ export default function App() {
     }
   }, [showToast]);
 
-  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds, resultMode, placements, participantIds }) => {
+  const saveSessionPlay = useCallback(async ({ playedAt, playedGameIds, resultMode, placements, participantIds, metrics }) => {
     if (!user || !currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) {
       return;
     }
@@ -1037,6 +1052,7 @@ export default function App() {
       normalizedResultMode,
       normalizedParticipantIds
     );
+    const normalizedMetrics = normalizeSessionMetrics(metrics);
     const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
 
     const payload = {
@@ -1052,6 +1068,7 @@ export default function App() {
       participantIds: normalizedParticipantIds,
       resultMode: normalizedResultMode,
       placements: normalizedPlacements,
+      metrics: normalizedMetrics,
       createdAt:
         typeof sessionPlayRecord?.createdAt === "number"
           ? sessionPlayRecord.createdAt
@@ -1085,7 +1102,7 @@ export default function App() {
   // while allowing date, winner, additional games, result mode, and placements
   // to be updated.
   const savePastSessionPlay = useCallback(
-    async (playRecord, { playedAt, winnerGameId, playedGameIds, resultMode, placements, participantIds }) => {
+    async (playRecord, { playedAt, winnerGameId, playedGameIds, resultMode, placements, participantIds, metrics }) => {
       if (!user || !currentGroupId || !playRecord?.id) return;
 
       if (user.isAnonymous) {
@@ -1121,6 +1138,7 @@ export default function App() {
         normalizedResultMode,
         normalizedParticipantIds
       );
+      const normalizedMetrics = normalizeSessionMetrics(metrics);
 
       const playRef = doc(db, "groups", currentGroupId, "plays", playRecord.id);
 
@@ -1135,6 +1153,7 @@ export default function App() {
         participantIds: normalizedParticipantIds,
         resultMode: normalizedResultMode,
         placements: normalizedPlacements,
+        metrics: normalizedMetrics,
         createdAt:
           typeof playRecord.createdAt === "number" ? playRecord.createdAt : now,
         updatedAt: now,
@@ -3195,6 +3214,15 @@ export default function App() {
                                 ? play.playedGameIds.filter((id) => id !== play?.winnerGameId)
                                 : [];
 
+                              const metricsList = Array.isArray(play?.metrics)
+                                ? play.metrics
+                                    .map((entry) => ({
+                                      name: String(entry?.name || "").trim(),
+                                      value: Number(entry?.value),
+                                    }))
+                                    .filter((entry) => entry.name && Number.isFinite(entry.value))
+                                : [];
+
                               const participantBadges = (play?.participantIds || []).map((userId) => {
                                 const summary = participantSummaryById[String(userId || "").trim()];
                                 return summary || null;
@@ -3306,6 +3334,23 @@ export default function App() {
                                       </div>
                                     )}
                                   </div>
+
+                                  {metricsList.length > 0 && (
+                                    <div>
+                                      <div className="text-xs uppercase tracking-wide text-neutral-500 mb-2">Metrics</div>
+                                      <div className="space-y-1.5">
+                                        {metricsList.map((metric, index) => (
+                                          <div
+                                            key={`${play.id}-metric-${index}`}
+                                            className="text-sm text-neutral-300 leading-relaxed"
+                                          >
+                                            <span className="text-neutral-400">{metric.name}:</span>{" "}
+                                            <span className="text-neutral-200">{metric.value}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
 
                                   {playedGamesList.length > 0 && (
                                     <div>

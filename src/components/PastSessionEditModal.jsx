@@ -104,6 +104,19 @@ function normalizeParticipantPlacements(placements, resultMode, participantIds) 
   return normalized.filter((entry) => allowed.has(entry.userId));
 }
 
+function normalizeSessionMetrics(metrics) {
+  const normalized = [];
+
+  for (const entry of Array.isArray(metrics) ? metrics : []) {
+    const name = String(entry?.name || "").trim();
+    const value = Number(entry?.value);
+    if (!name || !Number.isFinite(value)) continue;
+    normalized.push({ name, value });
+  }
+
+  return normalized;
+}
+
 function formatPlaceLabel(place) {
   const x = Number(place);
   if (!Number.isFinite(x) || x < 1) return "—";
@@ -197,6 +210,12 @@ export default function PastSessionEditModal({
   const [participantIds, setParticipantIds] = useState(initialParticipantIds);
   const [placements, setPlacements] = useState(
     normalizeParticipantPlacements(play?.placements, initialResultMode, initialParticipantIds)
+  );
+  const [metrics, setMetrics] = useState(
+    normalizeSessionMetrics(play?.metrics).map((entry) => ({
+      name: entry.name,
+      value: String(entry.value),
+    }))
   );
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
   const [participantSearchResults, setParticipantSearchResults] = useState([]);
@@ -399,7 +418,28 @@ export default function PastSessionEditModal({
         resultMode,
         participantIds
       ),
+      metrics: normalizeSessionMetrics(metrics),
     });
+  }
+
+  function addMetric() {
+    setMetrics((prev) => [...prev, { name: "", value: "" }]);
+  }
+
+  function updateMetricName(index, name) {
+    setMetrics((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, name } : entry))
+    );
+  }
+
+  function updateMetricValue(index, value) {
+    setMetrics((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, value } : entry))
+    );
+  }
+
+  function removeMetric(index) {
+    setMetrics((prev) => prev.filter((_, i) => i !== index));
   }
 
   // All games except the current winner — shown as additional-games checkboxes
@@ -801,6 +841,58 @@ export default function PastSessionEditModal({
           </p>
         </div>
       )}
+
+      <div className="ui-surface-subtle border rounded-xl">
+        <div className="px-3 py-2 border-b border-neutral-700 flex items-center justify-between gap-3">
+          <div>
+            <div className="ui-field-label">Custom metrics</div>
+            <div className="ui-field-hint">Add numeric session-level stats (optional).</div>
+          </div>
+          <button
+            type="button"
+            className="ui-btn-secondary text-xs px-2.5 py-1"
+            onClick={addMetric}
+          >
+            Add metric
+          </button>
+        </div>
+
+        <div className="px-3 py-3 space-y-2">
+          {metrics.length === 0 ? (
+            <div className="text-sm text-neutral-400">No custom metrics added.</div>
+          ) : (
+            metrics.map((entry, index) => (
+              <div
+                key={`metric-${index}`}
+                className="grid grid-cols-1 sm:grid-cols-[1fr_160px_auto] gap-2"
+              >
+                <input
+                  type="text"
+                  placeholder="Metric name"
+                  className="w-full"
+                  value={entry.name}
+                  onChange={(e) => updateMetricName(index, e.target.value)}
+                />
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="Value"
+                  className="w-full"
+                  value={entry.value}
+                  onChange={(e) => updateMetricValue(index, e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="ui-btn-secondary text-xs px-2.5 py-1"
+                  onClick={() => removeMetric(index)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       {/* Actions */}
       <div className="flex items-center gap-3 pt-2 border-t border-neutral-700">

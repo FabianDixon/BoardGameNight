@@ -205,6 +205,19 @@ function normalizeParticipantPlacements(placements, resultMode, participantIds) 
   return normalized.filter((entry) => allowed.has(entry.userId));
 }
 
+function normalizeSessionMetrics(metrics) {
+  const normalized = [];
+
+  for (const entry of Array.isArray(metrics) ? metrics : []) {
+    const name = String(entry?.name || "").trim();
+    const value = Number(entry?.value);
+    if (!name || !Number.isFinite(value)) continue;
+    normalized.push({ name, value });
+  }
+
+  return normalized;
+}
+
 function formatPlaceLabel(place) {
   const x = Number(place);
   if (!Number.isFinite(x) || x < 1) return "—";
@@ -559,11 +572,19 @@ function VotingPanelInner({
       )
     : [];
 
+  const initialHistoryMetrics = status === VOTE_STATUS.CLOSED
+    ? normalizeSessionMetrics(sessionPlayRecord?.metrics).map((entry) => ({
+        name: entry.name,
+        value: String(entry.value),
+      }))
+    : [];
+
   const [historyPlayedDate, setHistoryPlayedDate] = useState(initialHistoryPlayedDate);
   const [historyPlayedGameIds, setHistoryPlayedGameIds] = useState(initialHistoryPlayedGameIds);
   const [historyResultMode, setHistoryResultMode] = useState(initialHistoryResultMode);
   const [historyParticipantIds, setHistoryParticipantIds] = useState(initialHistoryParticipantIds);
   const [historyPlacements, setHistoryPlacements] = useState(initialHistoryPlacements);
+  const [historyMetrics, setHistoryMetrics] = useState(initialHistoryMetrics);
   const [participantSearchQuery, setParticipantSearchQuery] = useState("");
   const [participantSearchResults, setParticipantSearchResults] = useState([]);
   const [isSearchingParticipants, setIsSearchingParticipants] = useState(false);
@@ -634,7 +655,28 @@ function VotingPanelInner({
         historyResultMode,
         historyParticipantIds
       ),
+      metrics: normalizeSessionMetrics(historyMetrics),
     });
+  }
+
+  function addMetric() {
+    setHistoryMetrics((prev) => [...prev, { name: "", value: "" }]);
+  }
+
+  function updateMetricName(index, name) {
+    setHistoryMetrics((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, name } : entry))
+    );
+  }
+
+  function updateMetricValue(index, value) {
+    setHistoryMetrics((prev) =>
+      prev.map((entry, i) => (i === index ? { ...entry, value } : entry))
+    );
+  }
+
+  function removeMetric(index) {
+    setHistoryMetrics((prev) => prev.filter((_, i) => i !== index));
   }
 
   function togglePlayedGame(gameId) {
@@ -1426,6 +1468,58 @@ function VotingPanelInner({
                   <p className="text-sm text-neutral-300">This session will be recorded with no player winner.</p>
                 </div>
               )}
+
+              <div className="ui-surface-subtle border rounded-xl">
+                <div className="px-3 py-2 border-b border-neutral-700 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="ui-field-label">Custom metrics</div>
+                    <div className="ui-field-hint">Add numeric session-level stats (optional).</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-btn-secondary text-xs px-2.5 py-1"
+                    onClick={addMetric}
+                  >
+                    Add metric
+                  </button>
+                </div>
+
+                <div className="px-3 py-3 space-y-2">
+                  {historyMetrics.length === 0 ? (
+                    <div className="text-sm text-neutral-400">No custom metrics added.</div>
+                  ) : (
+                    historyMetrics.map((entry, index) => (
+                      <div
+                        key={`metric-${index}`}
+                        className="grid grid-cols-1 sm:grid-cols-[1fr_160px_auto] gap-2"
+                      >
+                        <input
+                          type="text"
+                          placeholder="Metric name"
+                          className="w-full"
+                          value={entry.name}
+                          onChange={(e) => updateMetricName(index, e.target.value)}
+                        />
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          placeholder="Value"
+                          className="w-full"
+                          value={entry.value}
+                          onChange={(e) => updateMetricValue(index, e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          className="ui-btn-secondary text-xs px-2.5 py-1"
+                          onClick={() => removeMetric(index)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="pt-2 border-t border-neutral-700">
