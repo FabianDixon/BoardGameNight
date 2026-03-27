@@ -1529,9 +1529,9 @@ export default function App() {
       return;
     }
 
-    // enforce 0.5 steps + range on client
+    // enforce 0.5 steps + range on client; 0 means clear/remove rating
     const v = Math.round(Number(value) * 2) / 2;
-    if (!(v >= 0.5 && v <= 5)) return;
+    if (!Number.isFinite(v) || v < 0 || v > 5) return;
 
     const ratingRef = doc(db, "ratings", `${user.uid}_${gameId}`);
     const gameRef = doc(db, "games", gameId);
@@ -1549,6 +1549,8 @@ export default function App() {
       const ratingCount = Number(game.ratingCount || 0);
 
       if (!ratingSnap.exists()) {
+        if (v === 0) return;
+
         // first time rating
         tx.set(ratingRef, {
           userId: user.uid,
@@ -1567,6 +1569,16 @@ export default function App() {
 
       // update existing rating
       const old = Number(ratingSnap.data().value || 0);
+
+      if (v === 0) {
+        tx.delete(ratingRef);
+        tx.update(gameRef, {
+          ratingTotal: ratingTotal - old,
+          ratingCount: Math.max(0, ratingCount - 1),
+        });
+        return;
+      }
+
       const delta = v - old;
 
       // no-op if unchanged
@@ -3391,9 +3403,14 @@ export default function App() {
           <div className="mt-4 mb-5 ui-surface-subtle p-3 md:p-4 space-y-3 sticky top-0 md:top-[86px] z-30">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div>
-                <h2 className="text-lg md:text-xl font-semibold text-white">
-                  {activeTab === "library" ? "Library" : "My Collection"}
-                </h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg md:text-xl font-semibold text-white">
+                    {activeTab === "library" ? "Library" : "My Collection"}
+                  </h2>
+                  {activeTab === "collection" && (
+                    <span className="ui-chip-muted">Owned: {myCollection.size}</span>
+                  )}
+                </div>
                 <p className="text-sm text-neutral-400">
                   {activeTab === "library"
                     ? "Browse and discover games"

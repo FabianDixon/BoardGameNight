@@ -1,4 +1,5 @@
 // src/components/GameDetail.jsx
+import { useEffect, useMemo, useState } from "react";
 import StarRating from "./StarRating";
 import { getGameTagLabel, normalizeGameTags } from "../utils/gameTags";
 
@@ -26,6 +27,32 @@ export default function GameDetail({
   shareBusy,
 }) {
   const tags = normalizeGameTags(game?.tags);
+  const initialSavedRating = useMemo(() => {
+    const value = Number(myRating);
+    return Number.isFinite(value) && value >= 0.5 && value <= 5 ? value : 0;
+  }, [myRating]);
+  const [savedRating, setSavedRating] = useState(initialSavedRating);
+  const [draftRating, setDraftRating] = useState(initialSavedRating);
+  const [isSavingRating, setIsSavingRating] = useState(false);
+
+  useEffect(() => {
+    setSavedRating(initialSavedRating);
+    setDraftRating(initialSavedRating);
+  }, [game?.id, initialSavedRating]);
+
+  const hasPendingRatingChanges = draftRating !== savedRating;
+
+  async function saveDraftRating(valueOverride = draftRating) {
+    if (!canRate || isSavingRating) return;
+    setIsSavingRating(true);
+    try {
+      await onRate?.(valueOverride);
+      setSavedRating(valueOverride);
+      setDraftRating(valueOverride);
+    } finally {
+      setIsSavingRating(false);
+    }
+  }
 
   return (
     <div className="mx-auto mt-4 md:mt-5 w-full max-w-4xl space-y-5">
@@ -78,7 +105,7 @@ export default function GameDetail({
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="ui-chip-yellow">⭐ Avg {averageRating(game)}</span>
-              <span className="ui-chip-muted">Your rating: {myRating ?? "—"}</span>
+              <span className="ui-chip-muted">Your rating: {savedRating || "—"}</span>
               {inCollection ? <span className="ui-chip-green">In your collection</span> : null}
             </div>
           </div>
@@ -112,7 +139,24 @@ export default function GameDetail({
             <div className="space-y-2">
               <p className="text-sm text-neutral-300">Rate this game</p>
               {canRate ? (
-                <StarRating value={myRating || 0} onChange={(v) => onRate(v)} readOnly={false} />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <StarRating
+                    value={draftRating}
+                    onChange={(v) => setDraftRating(v)}
+                    allowClearOnRepeat
+                    readOnly={isSavingRating}
+                  />
+                  {hasPendingRatingChanges && (
+                    <button
+                      type="button"
+                      className="ui-btn-secondary px-3 py-1.5 text-xs"
+                      onClick={() => saveDraftRating()}
+                      disabled={isSavingRating}
+                    >
+                      {isSavingRating ? "Saving…" : "Save"}
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-2.5 space-y-2">
                   <p className="text-sm text-neutral-300">Create an account to rate games.</p>
