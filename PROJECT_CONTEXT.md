@@ -4,7 +4,7 @@ Overview
 
 This project is a React + Firebase board game application intended to move beyond a private hobby app into a stable, scalable product that can support broader real-world usage and potentially future monetization.
 
-The app already has a mostly functional feature set and is no longer in an early prototype phase. The current priority is shifting from “learning while building” toward:
+The app already has a mostly functional feature set and is no longer in an early prototype phase. The current priority is shifting from "learning while building" toward:
 	•	improving maintainability
 	•	reducing tech debt
 	•	making future feature work faster and safer
@@ -28,8 +28,9 @@ At a high level, users should be able to:
 	•	vote on games within groups
 	•	view game and group details
 	•	manage personal profile-related information
+	•	view personal analytics and stats across all groups
 
-The long-term goal is for the app to feel polished enough to be used beyond a small friend group, with better UX, stronger data consistency, and a codebase that can evolve without becoming fragile.
+The long-term goal is for the app to feel polished enough to be used beyond a small friend group, with better UX, stronger data consistency, and a codebase that can evolve without becoming fragile. A premium subscription tier is planned for monetization, with personal analytics being the first candidate for premium gating in a future phase.
 
 ⸻
 
@@ -43,7 +44,7 @@ The current product flow is centered around a few core user journeys:
 	•	users create groups or join existing groups
 	•	once inside a group, users can view members, shared games, and group details
 	•	group-related flows include sharing collection data into the group context and participating in game selection or voting flows
-	•	users can move between personal collection management, group coordination, and game detail views depending on the current task
+	•	users can move between personal collection management, group coordination, game detail views, and personal analytics depending on the current task
 
 This flow is important context for contributors: the app is not just a collection tracker or just a voting tool. It combines personal collection management with collaborative group decision-making.
 
@@ -52,13 +53,15 @@ This flow is important context for contributors: the app is not just a collectio
 Main Domain Concepts
 
 The codebase revolves around a few main product/domain concepts:
-	•	User — the authenticated person using the app
+	•	User — the authenticated person using the app, including guest participants who are real accounts but not full group members
 	•	Game — a board game entity that can be searched, viewed, rated, collected, or shared
 	•	Personal Collection Entry — a user-specific relationship to a game, such as owning it, rating it, or exposing it for group use
 	•	Group — a collaborative space where multiple users coordinate around board game choices
-	•	Group Member — a user’s membership/permissions relationship to a specific group
+	•	Group Member — a user's membership/permissions relationship to a specific group
+	•	Session Participant — a user (member or guest) who participated in a specific played session; stored as UIDs in participantIds on play records
 	•	Shared Group Game — a game that is visible or contributed within a group context
 	•	Vote / Selection Flow — the mechanism a group uses to help decide what to play
+	•	Play Record — a persisted record of a completed session under groups/{groupId}/plays/{playId}, containing resultMode, playedGameIds, winnerGameId, placements, participantIds, metrics, and playedAt
 
 These concepts may not yet be perfectly separated in code, but they should be treated as distinct responsibilities when reviewing or refactoring the app.
 
@@ -73,6 +76,7 @@ The following areas should be treated as high-sensitivity flows where regression
 	•	shared game visibility inside groups
 	•	voting/session-selection flows that depend on synchronized group state
 	•	any logic that mixes top-level UI state changes with async Firestore updates
+	•	the useUserAnalytics hook, which maintains multiple parallel onSnapshot subscriptions across groups and must clean up all listeners correctly on userId change or unmount
 
 Contributors and AI agents should be especially careful when changing these areas. Preference should be given to incremental, well-scoped changes with explicit attention to async ordering, cleanup, and data consistency.
 
@@ -100,12 +104,23 @@ Key known files/components in the current project include:
 	•	AddGameForm.jsx
 	•	ProfileCard.jsx
 	•	GameImage.jsx
+	•	UserAnalyticsPanel.jsx
 	•	shared UI helpers such as Card.jsx, Fab.jsx, Toast.jsx
 	•	emailExport.js
+
+Key hooks include:
+	•	useGroupSessionHistory.js — loads raw play records for a specific group
+	•	useUserAnalytics.js — cross-group personal analytics aggregation hook (see notes below)
+	•	useMyCollection.js — user's personal collection entries
+	•	useMyRatings.js — user's game ratings
 
 There are also global CSS files such as:
 	•	index.css
 	•	App.css
+
+Firestore configuration files:
+	•	firestore.rules — source of truth for security rules, deployed via Firebase CLI
+	•	firestore.indexes.json — source of truth for index configuration, deployed via Firebase CLI
 
 ⸻
 
@@ -119,7 +134,7 @@ Recent work has included:
 	•	shared game visibility inside groups
 	•	voting flow updates
 	•	listener gating / server-sync timing concerns
-	•	improving “Manage My Games” discoverability and UX
+	•	improving "Manage My Games" discoverability and UX
 	•	moving toward safer incremental changes in App.jsx
 	•	the first complete UI/UX overhaul pass across the major top-level screens
 	•	migration of the main app shell to mobile-first bottom navigation with responsive desktop shell treatment
@@ -130,6 +145,7 @@ Recent work has included:
 	•	implementation of Tools v1 seat randomizer using current group members with include/exclude controls
 	•	introduction of past-session editing from the History tab for correcting saved session records
 	•	initial permissions/model work around owner/moderator-only past-session editing intent
+	•	implementation of the personal Analytics tab (see Post-Stabilization Status below)
 
 A recurring theme is that the app functionally works, but parts of the code have likely become too centralized or too intertwined, especially in top-level orchestration logic.
 
@@ -139,9 +155,9 @@ Current Product Priorities
 
 The roadmap priority order is:
 1. Focused feature work on top of the stabilized and overhauled codebase
-2. Analytics/statistics design and implementation
+2. Analytics/statistics — personal analytics tab is now complete; group-facing analytics and public profiles are next
 3. Product-release readiness work (permissions, storage/media, deployment readiness, polish)
-4. Future scaling and monetization-oriented improvements
+4. Future scaling and monetization-oriented improvements (premium tier, subscription gating)
 
 Important: the project is no longer primarily in a cleanup-first phase. The current priority is to build on the now-stabilized and overhauled foundation with focused feature work, analytics, and release-readiness follow-up.
 
@@ -151,9 +167,9 @@ Known Product Direction
 
 After the audit, the plan is to continue with:
 	•	specific bug fixes and small post-overhaul polish
-	•	analytics/statistics feature planning and implementation
+	•	analytics/statistics feature continuation (public profiles, group analytics)
 	•	product-release readiness work
-	•	later monetization/business-model exploration once the product shape is stable
+	•	later monetization/business-model exploration — a premium subscription tier (modeled loosely on Letterboxd's approach) is the intended direction, with personal analytics as the first candidate for gating
 
 ⸻
 
@@ -173,10 +189,10 @@ Completed work includes:
 	•	voting/session lifecycle hardening
 	•	hook reset-on-gate-off fixes to prevent stale state bleeding across group/session/user changes
 	•	a second follow-up audit after the stabilization work
-	•	implementation of explicit “No Submission” support during the collecting phase, including submission-state editing before voting opens
+	•	implementation of explicit "No Submission" support during the collecting phase, including submission-state editing before voting opens
 	•	landing-page sign-in flow fix so the initial sign-in path now routes correctly into the working authentication flow
 	•	introduction of the first session-history / played-session tracking foundation using persisted play records keyed by vote/session
-	•	creation of a local firestore.rules source of truth in the repo and wiring it into Firebase project configuration
+	•	creation of a local firestore.rules source of truth in the repo and wiring it into Firebase project configuration
 	•	completion of a major UI/UX overhaul pass across the app shell and major user-facing screens
 	•	bottom navigation for mobile plus desktop-specific shell treatment
 	•	overhaul of Library, My Collection, Game Detail, Groups, Group Detail shell, Voting, History, and Profile presentation
@@ -188,73 +204,112 @@ Completed work includes:
 	•	implementation of the first Tools feature: seat randomizer
 	•	implementation of past-session editing from the History tab
 	•	initial support for correcting saved played date, selected/played games, result mode, and placements on past sessions
+	•	implementation of the personal Analytics tab as a dedicated top-level navigation tab
+	•	creation of useUserAnalytics.js hook for cross-group analytics aggregation
+	•	creation of UserAnalyticsPanel.jsx for analytics presentation
+	•	analytics sections: sessions, games played, placements/results (win rate + podium rate + medals), co-op record, game types (tag-based), rated games
+	•	guest participant analytics support via collectionGroup plays query and extended Firestore read rules
+	•	bottom nav switched to icons-only on mobile to support five tabs cleanly
+	•	firestore.indexes.json added as source of truth for index configuration
 
 The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
 
 ⸻
 
-Current Product Roadmap After UI/UX Overhaul
+Analytics Tab — Architecture Notes
 
-1. Analytics / Statistics
-	•	This remains the highest-priority major product feature track.
-	•	Planned first focus is still group-facing statistics built from the session-history foundation.
-	•	Likely early metrics include:
-		•	total sessions played
-		•	most played games
-		•	most selected / winning games
-		•	player win counts / placements
-		•	co-op win/loss outcomes
-		•	tag-based insights later once the core analytics layer exists
-	•	Profile/user-facing statistics may follow after group statistics are established.
+The personal Analytics tab is implemented as a dedicated top-level tab (APP_TAB.ANALYTICS) in the bottom navigation.
+
+Key implementation details contributors should know:
+
+Data layer (useUserAnalytics.js):
+	•	Subscribes to users/{uid}/groups to discover the user's group memberships
+	•	Subscribes to plays per group filtered by participantIds array-contains userId for member sessions
+	•	Also runs a collectionGroup("plays") query filtered by participantIds array-contains userId to capture sessions where the user was a guest participant in a group they are not a member of
+	•	Both paths are merged and deduplicated by groupId:playId composite key
+	•	Subscribes to the global /games collection to resolve game titles and tags
+	•	Subscribes to users/{uid}/collection and the ratings collection for rated games
+	•	All analytics are computed client-side via useMemo from raw play records — no persisted rollups exist
+	•	The hook follows the same Map/Set aggregation pattern as GroupStatisticsPanel.jsx
+
+Firestore requirements:
+	•	The plays collectionGroup query relies on Firestore's automatic single-field index on participantIds (no manual composite index needed)
+	•	firestore.rules extends the plays read rule to allow reads by users listed in participantIds, not just group members
+	•	Both rules and indexes are deployed via: firebase deploy --only firestore
+
+Tag-based game types:
+	•	Tags are stored on game records (/games), not on session/play records
+	•	The hook joins playedGameIds against game records to resolve tags at read time
+	•	Games with no tags are handled silently — they contribute to session/game counts but are excluded from the type breakdown
+	•	A future QoL feature will add mandatory default tags to all games via the AddGameForm, which will naturally improve tag coverage over time without requiring changes to the analytics layer
+
+Monetization note:
+	•	The Analytics tab is currently fully unlocked for all users
+	•	A premium/free split is planned for a future phase once the feature is validated with real usage
+	•	The intended model is a cheap annual subscription (similar to Letterboxd), with deeper analytics and public profiles as the premium offering
+	•	No paywall infrastructure exists yet — do not add gating logic until the subscription system is designed
+
+⸻
+
+Current Product Roadmap
+
+1. Analytics / Statistics (in progress)
+	•	Personal analytics tab is now complete (v1)
+	•	Next analytics priorities:
+		•	public player profiles — let other users view your analytics via group click-through
+		•	privacy toggle for public/private profile
+		•	group-facing aggregate statistics
+		•	future: premium gating of analytics depth
 
 2. Session Participants / Guest Support
-	•	The next major gameplay-oriented feature direction is session-scoped participants.
-	•	The intended model is:
-		•	group members remain the only users used for submission/voting/group permissions
-		•	session participants represent the people who actually participated in one played session
-		•	session participants may later include guest users who are real accounts but are not full group members
-	•	The preferred product direction is to add guests after submission/voting ends, during the closed-session/session-details stage.
-	•	This feature should later support:
-		•	placements/results using session participants
+	•	Guest users are real authenticated accounts that participate in sessions without being full group members
+	•	Their UIDs are stored in participantIds on play records identically to members
+	•	Analytics now correctly captures guest session data via the collectionGroup query path
+	•	Remaining guest-related work:
+		•	placements/results UI using session participants
 		•	seat randomizer using session participants
-		•	history and analytics counting those participants correctly
+		•	history display counting guest participants correctly
 
 3. Group-Level Rules / Permissions Follow-Up
-	•	Group hidden-tag rules have now been implemented in a first version.
-	•	A likely follow-up is tightening permissions around session-history/result editing so this is limited to owner + moderator roles rather than broad member access at the Firestore-rule level.
-	•	Any permissions work here should be treated as focused post-overhaul product hardening.
+	•	Group hidden-tag rules have been implemented in a first version
+	•	Permissions around session-history/result editing should be tightened to owner + moderator roles
+	•	Any permissions work should be treated as focused post-overhaul product hardening
 
 4. Identity / Media Follow-Up
-	•	Profile avatars have now been implemented using bundled default avatar assets.
-	•	Likely future follow-up work includes:
+	•	Profile avatars are implemented using bundled default avatar assets
+	•	Likely future follow-up:
 		•	group imagery/banners
 		•	expanded avatar pack / art direction cleanup
-		•	image/media storage decisions for a more productized release
-	•	This should remain lightweight until launch direction is clearer.
+		•	image/media storage decisions for a productized release
+	•	Keep lightweight until launch direction is clearer
 
 5. Release Readiness
-	•	The next non-feature planning phase should focus on what is required for an actual product release.
-	•	This likely includes:
-		•	light regression testing across the overhauled flows
-		•	permissions review
-		•	storage/media decisions
-		•	deployment/store-readiness planning
-		•	small post-overhaul polish fixes
+	•	Light regression testing across overhauled flows
+	•	Permissions review
+	•	Storage/media decisions
+	•	Deployment/store-readiness planning
+	•	Small post-overhaul polish fixes
 
-6. Mobile-App Readiness
-	•	The app now has a stronger mobile-first shell and is a realistic candidate for later wrapping as a mobile app.
-	•	Current expectation is to continue polishing the web app first, then evaluate Capacitor-based mobile packaging later.
-	•	This is considered viable, but is not yet the immediate implementation priority.
+6. Monetization
+	•	Premium subscription tier (annual, low cost — Letterboxd model)
+	•	Personal analytics is the first candidate feature for premium gating
+	•	Public profiles are a strong second candidate
+	•	No implementation until product shape and launch readiness are confirmed
+
+7. Mobile-App Readiness
+	•	The app has a strong mobile-first shell and is a realistic Capacitor candidate
+	•	Continue polishing the web app first, then evaluate mobile packaging
+	•	Not the immediate implementation priority
 
 ⸻
 
 Current Development Strategy
 
 The preferred sequence is now:
-	1.	close any remaining small post-overhaul polish issues
-	2.	run light regression testing on the overhauled app flows
-	3.	design and implement the first analytics/statistics features
-	4.	design the session-participants / guest-support model before coding it broadly
+	1.	validate the personal analytics tab with real usage and fix any remaining edge cases
+	2.	design and implement public player profiles with privacy controls
+	3.	design group-facing aggregate statistics
+	4.	design the session-participants / guest-support model more broadly before coding it further
 	5.	review release-readiness gaps before launch-oriented work
 
 The styling/tooling foundation has now been established well enough to support the completed overhaul pass, but future contributors should still prefer extending the shared design-system primitives rather than reintroducing ad hoc one-off styling.
@@ -273,7 +328,7 @@ Before changing code:
 When suggesting improvements:
 	•	be concrete
 	•	reference actual files/components
-	•	separate “must fix now” from “nice to have later”
+	•	separate "must fix now" from "nice to have later"
 
 When implementing:
 	•	keep patches reviewable
@@ -304,11 +359,13 @@ Note:
 Current Known Follow-Up Items
 
 The highest-value near-term follow-up items are now:
-	•	run a light regression/testing pass across the newly overhauled app flows
-	•	design and implement the first analytics/statistics surfaces, starting with group statistics
-	•	design Session Participants v1 so future guest users can exist at session scope without becoming group members
-	•	review and tighten permissions around session-history/result editing if needed
-	•	continue small post-overhaul polish fixes only when they are concrete and high-value
+	•	validate personal analytics with real user data and fix any remaining edge cases
+	•	design and implement public player profiles with group click-through discovery and privacy toggle
+	•	design group-facing aggregate statistics surface
+	•	design Session Participants v1 more broadly — guest display in history, seat randomizer, placements UI
+	•	review and tighten permissions around session-history/result editing (owner + moderator only)
+	•	continue small post-overhaul polish fixes only when concrete and high-value
 	•	prepare a release-readiness checklist covering media, deployment, permissions, and launch needs
+	•	plan the premium subscription tier once the feature set is stable enough to gate
 
-These should be treated as the bridge between the completed overhaul phase and the next product-maturity phase (analytics, permissions hardening, release readiness, and later monetization exploration).
+These should be treated as the bridge between the completed analytics phase and the next product-maturity phase (public profiles, group analytics, permissions hardening, release readiness, and monetization).

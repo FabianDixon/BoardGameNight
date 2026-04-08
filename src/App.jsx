@@ -47,6 +47,7 @@ import GroupsPanel from "./components/GroupsPanel";
 import VotingPanel from "./components/VotingPanel";
 import GroupStatisticsPanel from "./components/GroupStatisticsPanel";
 import GroupToolsPanel from "./components/GroupToolsPanel";
+import UserAnalyticsPanel from "./components/UserAnalyticsPanel";
 import Toast from "./components/ui/Toast";
 import Fab from "./components/ui/Fab";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
@@ -2841,6 +2842,7 @@ export default function App() {
     { key: APP_TAB.LIBRARY, icon: "📚", label: "Library" },
     { key: APP_TAB.COLLECTION, icon: "🧺", label: "Collection" },
     { key: APP_TAB.GROUP, icon: "👥", label: "Groups" },
+    { key: APP_TAB.ANALYTICS, icon: "📊", label: "Analytics" },
     { key: APP_TAB.PROFILE, icon: "👤", label: "Profile" },
   ];
 
@@ -2868,6 +2870,7 @@ export default function App() {
               {activeTab === APP_TAB.LIBRARY && "Browse the full library"}
               {activeTab === APP_TAB.COLLECTION && "Games you can bring"}
               {activeTab === APP_TAB.GROUP && "Pick a group and vote"}
+              {activeTab === APP_TAB.ANALYTICS && "Your cross-group session stats"}
               {activeTab === APP_TAB.PROFILE && "Your nickname and settings"}
             </p>
           </div>
@@ -3063,6 +3066,11 @@ export default function App() {
           onSaveAvatarId={saveAvatarId}
           onToast={showToast}
         />
+      )}
+
+      {/* Analytics */}
+      {activeTab === APP_TAB.ANALYTICS && (
+        <UserAnalyticsPanel userId={user?.uid || ""} />
       )}
 
       {/* Group */}
@@ -3637,24 +3645,24 @@ export default function App() {
       {!showAuthPrompt && (
         <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-700 bg-neutral-900/95 backdrop-blur md:hidden">
           <div className="mx-auto w-full max-w-3xl px-3 py-2">
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-5 gap-2">
               {topLevelTabs.map((t) => {
                 const isActive = activeTab === t.key;
                 return (
                   <button
                     key={t.key}
                     className={[
-                      "flex flex-col items-center justify-center rounded-xl py-1.5 px-2 text-xs transition",
+                      "flex items-center justify-center rounded-xl py-2 px-2 text-xs transition",
                       isActive
                         ? "bg-neutral-700 text-white"
                         : "text-neutral-300 hover:bg-neutral-800",
                     ].join(" ")}
                     onClick={() => handleTopLevelTabClick(t.key)}
                     disabled={t.key === APP_TAB.COLLECTION && !user}
-                    title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
+                    title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : t.label}
+                    aria-label={t.label}
                   >
                     <span className="text-base leading-none">{t.icon}</span>
-                    <span className="mt-1 font-medium">{t.label}</span>
                   </button>
                 );
               })}

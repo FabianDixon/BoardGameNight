@@ -440,7 +440,12 @@ match /groups/{groupId}/pool/{gameId} {
 // Plays log
 // -------------------------
 match /groups/{groupId}/plays/{playId} {
-  allow read: if isGroupMember(groupId);
+  allow read: if isGroupMember(groupId)
+    || (
+      request.auth != null
+      && resource.data.participantIds is list
+      && request.auth.uid in resource.data.participantIds
+    );
 
   function isValidPlayRecordShape() {
     return request.resource.data.groupId == groupId

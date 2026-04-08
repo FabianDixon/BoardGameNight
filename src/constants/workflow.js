@@ -15,6 +15,7 @@ export const APP_TAB = {
   LIBRARY: "library",
   COLLECTION: "collection",
   GROUP: "group",
+  ANALYTICS: "analytics",
   PROFILE: "profile",
 };
 
