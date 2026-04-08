@@ -261,6 +261,7 @@ export default function App() {
   const [winnerModal, setWinnerModal] = useState(null);
   const [sessionPlayRecord, setSessionPlayRecord] = useState(null);
   const [isSavingSessionPlay, setIsSavingSessionPlay] = useState(false);
+  const [isSavingVoteOverride, setIsSavingVoteOverride] = useState(false);
 
   const [editingPastPlay, setEditingPastPlay] = useState(null);
   const [isSavingPastPlay, setIsSavingPastPlay] = useState(false);
@@ -310,14 +311,6 @@ export default function App() {
 
   // Derived: whether we have a valid, loaded group currently selected
   const hasValidGroupSelection = Boolean(currentGroupId && currentGroup);
-
-  const canManageSession = useMemo(() => {
-    if (!user || !activeVote) return false;
-    const isVoteOwner = activeVote.createdBy === user.uid;
-    const isGroupOwner = currentGroup?.ownerId === user.uid;
-    return isVoteOwner || isGroupOwner;
-  }, [user, activeVote, currentGroup]);
-
   const canCloseActiveVote = useMemo(() => {
     if (!user || !activeVote || activeVote.status !== VOTE_STATUS.OPEN) return false;
     const isVoteOwner = activeVote.createdBy === user.uid;
@@ -732,10 +725,41 @@ export default function App() {
     return myRole === "moderator";
   }, [user, currentGroupId, currentGroup, myRole]);
 
+  const canManageSession = useMemo(() => {
+    if (!user || !activeVote) return false;
+    const isVoteOwner = activeVote.createdBy === user.uid;
+    const isGroupOwner = currentGroup?.ownerId === user.uid;
+    const isModerator = myRole === "moderator";
+    return isVoteOwner || isGroupOwner || isModerator;
+  }, [user, activeVote, currentGroup, myRole]);
+
   const voteResults = useMemo(() => {
     if (!activeVote || activeVote.status !== VOTE_STATUS.CLOSED) return [];
 
     const gameMap = new Map(games.map((g) => [g.id, g]));
+
+    // Prefer override results written by a manager correction
+    const overrideResults = sessionPlayRecord?.overrideResults;
+    if (Array.isArray(overrideResults) && overrideResults.length > 0) {
+      const effectiveWinnerId =
+        typeof sessionPlayRecord?.winnerGameId === "string" && sessionPlayRecord.winnerGameId.trim()
+          ? sessionPlayRecord.winnerGameId.trim()
+          : null;
+      return overrideResults
+        .map((r) => ({
+          gameId: String(r.gameId || "").trim(),
+          title: gameMap.get(String(r.gameId || "").trim())?.title || String(r.gameId || "").trim(),
+          votes: Number(r.votes || 0),
+          score: Number(r.votes || 0),
+          isWinner: String(r.gameId || "").trim() === effectiveWinnerId,
+        }))
+        .filter((r) => r.gameId)
+        .sort((a, b) => {
+          if (a.isWinner && !b.isWinner) return -1;
+          if (!a.isWinner && b.isWinner) return 1;
+          return b.votes - a.votes;
+        });
+    }
 
     // Prefer authoritative scoreBreakdown stored on the vote doc
     const breakdown = Array.isArray(activeVote.scoreBreakdown)
@@ -773,7 +797,7 @@ export default function App() {
       }))
       .filter((r) => r.votes > 0 || r.score > 0)
       .sort((a, b) => b.score - a.score);
-  }, [activeVote, voteBallots, games]);
+  }, [activeVote, sessionPlayRecord, voteBallots, games]);
 
   const poolActiveIds = useMemo(() => {
     return new Set(poolDocs.filter((p) => p.isActive).map((p) => p.id));
@@ -782,6 +806,18 @@ export default function App() {
   const submittedGameIds = useMemo(() => {
     return new Set(sessionSubmissions.map((s) => s.gameId).filter(Boolean));
   }, [sessionSubmissions]);
+
+  // For the vote override editor: use submitted games when available, otherwise fall back to candidates
+  const editorSourceGameIds = useMemo(() => {
+    if (submittedGameIds.size > 0) return submittedGameIds;
+    // When vote is closed, sessionSubmissions is empty; use activeVote.candidates as fallback
+    const candidates = Array.isArray(activeVote?.candidates) ? activeVote.candidates : [];
+    return new Set(candidates.map((c) => {
+      if (typeof c === "string") return c;
+      if (typeof c === "object" && c?.gameId) return String(c.gameId).trim();
+      return null;
+    }).filter(Boolean));
+  }, [submittedGameIds, activeVote?.candidates]);
 
   const activePoolGameIds = useMemo(() => {
     return Array.from(poolActiveIds);
@@ -1096,6 +1132,66 @@ export default function App() {
     sessionPlayRecord,
     showToast,
   ]);
+
+  const saveVoteOverride = useCallback(
+    async (overrideResults, winnerGameId) => {
+      if (!user || !currentGroupId || !activeVote?.id || activeVote.status !== VOTE_STATUS.CLOSED) return;
+
+      if (user.isAnonymous) {
+        showToast("Saved account required for vote overrides.", "info");
+        setSavedAccountRequiredOpen(true);
+        return;
+      }
+
+      if (!canManageSession) {
+        showToast("Only the session owner (or group owner/moderator) can override vote results.", "error");
+        return;
+      }
+
+      const normalized = Array.isArray(overrideResults)
+        ? overrideResults
+            .map((r) => ({
+              gameId: String(r.gameId || "").trim(),
+              votes: Math.max(0, Number(r.votes) || 0),
+              isWinner: !!r.isWinner,
+            }))
+            .filter((r) => r.gameId)
+        : [];
+
+      const effectiveWinnerId =
+        typeof winnerGameId === "string" && winnerGameId.trim()
+          ? winnerGameId.trim()
+          : null;
+
+      const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
+      const now = Date.now();
+
+      const payload = {
+        groupId: currentGroupId,
+        voteId: activeVote.id,
+        overrideResults: normalized,
+        winnerGameId: effectiveWinnerId,
+        createdAt:
+          typeof sessionPlayRecord?.createdAt === "number"
+            ? sessionPlayRecord.createdAt
+            : now,
+        updatedAt: now,
+        createdBy: sessionPlayRecord?.createdBy || user.uid,
+      };
+
+      try {
+        setIsSavingVoteOverride(true);
+        await setDoc(playRef, payload, { merge: true });
+        showToast("Vote results overridden ✅", "success");
+      } catch (e) {
+        console.error("saveVoteOverride failed:", e);
+        showToast(e.code || e.message || "Failed to save vote override.", "error");
+      } finally {
+        setIsSavingVoteOverride(false);
+      }
+    },
+    [user, currentGroupId, activeVote, canManageSession, sessionPlayRecord, showToast]
+  );
 
   // Save an edit to a past session play record.
   // Preserves immutable fields (voteId, createdBy, createdAt, sessionIndex)
@@ -3058,12 +3154,15 @@ export default function App() {
                         canCloseActiveVote={canCloseActiveVote}
                         poolActiveIds={poolActiveIds}
                         submittedGameIds={submittedGameIds}
+                        editorSourceGameIds={editorSourceGameIds}
                         groupMemberCount={groupMemberCount}
                         submissionsCount={submissionsCount}
                         ballotsCount={ballotsCount}
                         sessionPlayRecord={sessionPlayRecord}
                         onSaveSessionPlay={saveSessionPlay}
                         isSavingSessionPlay={isSavingSessionPlay}
+                        onSaveVoteOverride={saveVoteOverride}
+                        isSavingVoteOverride={isSavingVoteOverride}
                         sessionHistory={normalizedSessionHistory}
                         participantSummaryById={participantSummaryById}
                         onSearchAccounts={searchSessionAccounts}

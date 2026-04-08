@@ -323,6 +323,7 @@ function VotingPanelInner({
 
   poolActiveIds,
   submittedGameIds,
+  editorSourceGameIds,
 
   activeVote,
   mySubmissionGameId,
@@ -353,6 +354,8 @@ function VotingPanelInner({
   groupMemberCount = 0,
   submissionsCount = 0,
   ballotsCount = 0,
+  onSaveVoteOverride,
+  isSavingVoteOverride = false,
 }) {
   const gameMap = useMemo(
     () => new Map((groupGames || []).map((g) => [g.id, g])),
@@ -589,6 +592,15 @@ function VotingPanelInner({
   const [participantSearchResults, setParticipantSearchResults] = useState([]);
   const [isSearchingParticipants, setIsSearchingParticipants] = useState(false);
 
+  const [isVoteOverrideOpen, setIsVoteOverrideOpen] = useState(false);
+  const [overrideDraft, setOverrideDraft] = useState([]);
+
+  const overrideTotalVotes = useMemo(
+    () => overrideDraft.reduce((sum, r) => sum + (Number(r.votes) || 0), 0),
+    [overrideDraft]
+  );
+  const overrideVotesRemaining = groupMemberCount - overrideTotalVotes;
+
   const placementChoices = useMemo(() => {
     const count = Math.max(historyParticipantIds.length, 4);
     return Array.from({ length: count }, (_, index) => index + 1);
@@ -805,6 +817,58 @@ function VotingPanelInner({
     } finally {
       setIsSearchingParticipants(false);
     }
+  }
+
+  function openVoteOverrideEditor() {
+    // Use editorSourceGameIds (submitted games or candidates) for the full editor list
+    // Fall back to scoredResults if editorSourceGameIds is unavailable
+    const sourceIds = (editorSourceGameIds instanceof Set && editorSourceGameIds.size > 0)
+      ? editorSourceGameIds
+      : new Set(scoredResults.map((r) => r.gameId));
+
+    const scoredResultsMap = new Map(scoredResults.map((r) => [r.gameId, r]));
+
+    setOverrideDraft(
+      Array.from(sourceIds).map((gameId) => {
+        const scored = scoredResultsMap.get(gameId);
+        return {
+          gameId,
+          title: scored?.title || gameMap.get(gameId)?.title || gameId,
+          votes: scored?.votes || 0,
+          isWinner: scored?.isWinner || false,
+        };
+      })
+    );
+    setIsVoteOverrideOpen(true);
+  }
+
+  function handleSetOverrideVotes(gameId, value) {
+    setOverrideDraft((prev) =>
+      prev.map((r) =>
+        r.gameId === gameId
+          ? { ...r, votes: Math.max(0, Math.min(groupMemberCount, Number(value) || 0)) }
+          : r
+      )
+    );
+  }
+
+  function handleSetOverrideWinner(gameId) {
+    setOverrideDraft((prev) =>
+      prev.map((r) => ({ ...r, isWinner: r.gameId === gameId }))
+    );
+  }
+
+  async function handleSaveVoteOverride() {
+    if (!onSaveVoteOverride || isSavingVoteOverride) return;
+    const winnerEntry = overrideDraft.find((r) => r.isWinner);
+    const winnerId = winnerEntry?.gameId || null;
+    const toSave = overrideDraft.map(({ gameId, votes, isWinner }) => ({
+      gameId,
+      votes: Number(votes) || 0,
+      isWinner: !!isWinner,
+    }));
+    await onSaveVoteOverride(toSave, winnerId);
+    setIsVoteOverrideOpen(false);
   }
 
   return (
@@ -1085,6 +1149,94 @@ function VotingPanelInner({
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {canManageSession && (
+              <div className="border-t border-neutral-700 pt-4">
+                <button
+                  type="button"
+                  className="ui-btn-secondary text-xs"
+                  onClick={() => {
+                    if (isVoteOverrideOpen) {
+                      setIsVoteOverrideOpen(false);
+                    } else {
+                      openVoteOverrideEditor();
+                    }
+                  }}
+                >
+                  {isVoteOverrideOpen ? "Cancel" : "Edit results"}
+                </button>
+
+                {isVoteOverrideOpen && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-xs text-neutral-400">
+                      Override vote counts and winner. Original ballot data is never modified.
+                    </p>
+
+                    <div className="text-sm text-neutral-300">
+                      Votes remaining:{" "}
+                      <span className={overrideVotesRemaining < 0 ? "text-red-400 font-bold" : "font-semibold text-white"}>
+                        {overrideVotesRemaining}
+                      </span>
+                      {overrideVotesRemaining < 0 && (
+                        <span className="ml-2 text-xs text-red-400">Exceeds member count</span>
+                      )}
+                    </div>
+
+                    {overrideDraft.length === 0 ? (
+                      <p className="text-sm text-neutral-400">No vote data to override.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {overrideDraft.map((r) => (
+                          <div
+                            key={r.gameId}
+                            className="ui-surface-subtle p-3 flex items-center gap-3"
+                          >
+                            <input
+                              type="radio"
+                              name="override-winner"
+                              checked={r.isWinner}
+                              onChange={() => handleSetOverrideWinner(r.gameId)}
+                              className="shrink-0"
+                              title="Mark as winner"
+                            />
+                            <span className="flex-1 text-sm text-neutral-200 min-w-0 truncate">
+                              {r.isWinner && "🏆 "}{r.title}
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              max={groupMemberCount}
+                              value={r.votes}
+                              onChange={(e) => handleSetOverrideVotes(r.gameId, e.target.value)}
+                              className="w-20 text-sm text-right"
+                            />
+                            <span className="text-xs text-neutral-500 shrink-0">votes</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        type="button"
+                        className="ui-btn-primary text-sm"
+                        disabled={isSavingVoteOverride || overrideVotesRemaining < 0}
+                        onClick={handleSaveVoteOverride}
+                      >
+                        {isSavingVoteOverride ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-btn-secondary text-sm"
+                        onClick={() => setIsVoteOverrideOpen(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

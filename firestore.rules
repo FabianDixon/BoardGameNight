@@ -450,6 +450,7 @@ match /groups/{groupId}/plays/{playId} {
       && (request.resource.data.winnerGameId == null || request.resource.data.winnerGameId is string)
       && request.resource.data.playedGameIds is list
       && (!("participantIds" in request.resource.data) || request.resource.data.participantIds is list)
+      && (!("overrideResults" in request.resource.data) || request.resource.data.overrideResults is list)
       && request.resource.data.createdAt is number
       && request.resource.data.updatedAt is number
       && request.resource.data.createdBy is string;
