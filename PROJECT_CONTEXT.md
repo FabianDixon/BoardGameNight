@@ -1,5 +1,12 @@
 Project Context — Board Game App
 
+Document Marker (Context Changelog)
+
+- Last verified: 2026-04-25
+- Verification baseline: code + rules + recent history through commit 1ec5e8c
+- Policy note: Game metadata editing is intentionally collaborative for now (not yet owner-restricted by design).
+- Latest doc refresh highlights: roadmap/status alignment after shipping group statistics v1, participant-aware session tooling, vote-result override, custom session metrics, token counters, and guest-aware analytics aggregation.
+
 Overview
 
 This project is a React + Firebase board game application intended to move beyond a private hobby app into a stable, scalable product that can support broader real-world usage and potentially future monetization.
@@ -142,10 +149,15 @@ Recent work has included:
 	•	group-level tag rules for hiding tagged games from Group Collection
 	•	surfacing avatars in session results and history presentation
 	•	addition of a new Tools tab in Group Detail
-	•	implementation of Tools v1 seat randomizer using current group members with include/exclude controls
+	•	implementation of Tools v1 seat randomizer and evolution to session-participant-aware randomization (members + guests)
+	•	addition of Tools v2 token counters with local persistence
 	•	introduction of past-session editing from the History tab for correcting saved session records
-	•	initial permissions/model work around owner/moderator-only past-session editing intent
+	•	completion of owner/moderator/creator-based play-record edit permissions in Firestore rules
+	•	manual vote-result override flow ("Edit results") for post-close corrections
+	•	custom numeric session metrics support in both closed-session and past-session editors
+	•	group statistics v1 (overview, most played, player results, medal table, co-op rate)
 	•	implementation of the personal Analytics tab (see Post-Stabilization Status below)
+	•	analytics expansion to full cross-group + guest participation coverage with deduped play aggregation
 
 A recurring theme is that the app functionally works, but parts of the code have likely become too centralized or too intertwined, especially in top-level orchestration logic.
 
@@ -155,8 +167,8 @@ Current Product Priorities
 
 The roadmap priority order is:
 1. Focused feature work on top of the stabilized and overhauled codebase
-2. Analytics/statistics — personal analytics tab is now complete; group-facing analytics and public profiles are next
-3. Product-release readiness work (permissions, storage/media, deployment readiness, polish)
+2. Analytics/statistics iteration — personal analytics and group statistics v1 are shipped; next is depth, quality, and public profile surfaces
+3. Product-release readiness work (permissions policy alignment, storage/media, deployment readiness, regression coverage)
 4. Future scaling and monetization-oriented improvements (premium tier, subscription gating)
 
 Important: the project is no longer primarily in a cleanup-first phase. The current priority is to build on the now-stabilized and overhauled foundation with focused feature work, analytics, and release-readiness follow-up.
@@ -167,7 +179,7 @@ Known Product Direction
 
 After the audit, the plan is to continue with:
 	•	specific bug fixes and small post-overhaul polish
-	•	analytics/statistics feature continuation (public profiles, group analytics)
+	•	analytics/statistics feature continuation (public profiles, deeper analytics, and iterative improvements on shipped stats surfaces)
 	•	product-release readiness work
 	•	later monetization/business-model exploration — a premium subscription tier (modeled loosely on Letterboxd's approach) is the intended direction, with personal analytics as the first candidate for gating
 
@@ -211,6 +223,15 @@ Completed work includes:
 	•	guest participant analytics support via collectionGroup plays query and extended Firestore read rules
 	•	bottom nav switched to icons-only on mobile to support five tabs cleanly
 	•	firestore.indexes.json added as source of truth for index configuration
+	•	Group Statistics v1 surface in Group Detail (Statistics tab)
+	•	medal-table expansion for group statistics
+	•	session participant model hardening: participantIds used across history, placements, tools, and analytics
+	•	seat randomizer upgraded to use session participants (including guests) with avatar-aware rendering
+	•	guest account lookup by exact user ID for session participant management
+	•	token counters tool added under Group Detail → Tools
+	•	custom session metrics capture/edit support in VotingPanel and PastSessionEditModal
+	•	vote result override editor for closed sessions (manual corrections without mutating ballot docs)
+	•	Firestore rules hardening: game delete ownership check, role enum validation, and constrained play-record edits
 
 The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
 
@@ -253,26 +274,34 @@ Monetization note:
 
 Current Product Roadmap
 
-1. Analytics / Statistics (in progress)
-	•	Personal analytics tab is now complete (v1)
+1. Analytics / Statistics (active iteration)
+	•	Shipped:
+		•	personal analytics tab (cross-group + guest sessions)
+		•	group statistics v1 tab (overview, most played, participant results, medals, co-op rate)
 	•	Next analytics priorities:
 		•	public player profiles — let other users view your analytics via group click-through
 		•	privacy toggle for public/private profile
-		•	group-facing aggregate statistics
+		•	deeper metric surfaces and trend views
 		•	future: premium gating of analytics depth
 
 2. Session Participants / Guest Support
 	•	Guest users are real authenticated accounts that participate in sessions without being full group members
 	•	Their UIDs are stored in participantIds on play records identically to members
 	•	Analytics now correctly captures guest session data via the collectionGroup query path
+	•	Delivered in v1:
+		•	placements/results UI uses session participants
+		•	seat randomizer uses session participants
+		•	history surfaces participant badges and guest labeling
 	•	Remaining guest-related work:
-		•	placements/results UI using session participants
-		•	seat randomizer using session participants
-		•	history display counting guest participants correctly
+		•	UX polish and safeguards around participant search/add flow
+		•	quality-of-life improvements for large groups and repeated guest usage
 
 3. Group-Level Rules / Permissions Follow-Up
 	•	Group hidden-tag rules have been implemented in a first version
-	•	Permissions around session-history/result editing should be tightened to owner + moderator roles
+	•	Session-history/result editing constraints are implemented in rules (owner + moderator + creator)
+	•	Group member role validation enum is implemented in rules
+	•	Game delete ownership is implemented in rules
+	•	Remaining permissions follow-up is mainly policy alignment and review, not first-pass implementation
 	•	Any permissions work should be treated as focused post-overhaul product hardening
 
 4. Identity / Media Follow-Up
@@ -306,11 +335,11 @@ Current Product Roadmap
 Current Development Strategy
 
 The preferred sequence is now:
-	1.	validate the personal analytics tab with real usage and fix any remaining edge cases
+	1.	validate and iterate on shipped analytics/statistics surfaces with real usage data
 	2.	design and implement public player profiles with privacy controls
-	3.	design group-facing aggregate statistics
-	4.	design the session-participants / guest-support model more broadly before coding it further
-	5.	review release-readiness gaps before launch-oriented work
+	3.	continue participant/guest UX refinement and data-quality hardening
+	4.	review release-readiness gaps (permissions policy alignment, regression coverage, deployment/media decisions)
+	5.	prepare monetization gating only after product shape stabilizes
 
 The styling/tooling foundation has now been established well enough to support the completed overhaul pass, but future contributors should still prefer extending the shared design-system primitives rather than reintroducing ad hoc one-off styling.
 
@@ -359,13 +388,13 @@ Note:
 Current Known Follow-Up Items
 
 The highest-value near-term follow-up items are now:
-	•	validate personal analytics with real user data and fix any remaining edge cases
+	•	validate both personal analytics and group statistics with real user data and fix edge cases
 	•	design and implement public player profiles with group click-through discovery and privacy toggle
-	•	design group-facing aggregate statistics surface
-	•	design Session Participants v1 more broadly — guest display in history, seat randomizer, placements UI
-	•	review and tighten permissions around session-history/result editing (owner + moderator only)
+	•	iterate analytics depth (trend views, richer breakdowns, and/or longitudinal summaries)
+	•	continue Session Participants v1 polish (lookup UX, repeated guest flows, larger-session ergonomics)
+	•	review permissions policy alignment between client UX and Firestore rules where intent is still evolving
 	•	continue small post-overhaul polish fixes only when concrete and high-value
 	•	prepare a release-readiness checklist covering media, deployment, permissions, and launch needs
 	•	plan the premium subscription tier once the feature set is stable enough to gate
 
-These should be treated as the bridge between the completed analytics phase and the next product-maturity phase (public profiles, group analytics, permissions hardening, release readiness, and monetization).
+These should be treated as the bridge between the shipped analytics/statistics foundation and the next product-maturity phase (public profiles, deeper analytics, release hardening, and monetization).
