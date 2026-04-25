@@ -580,7 +580,7 @@ match /groups/{groupId}/votes/{voteId}/ballots/{userId} {
   }
 
   function mySubmissionGameId() {
-    return get(/databases/$(database)/documents/groups/$(groupId)/votes/$(voteId)/submissions/$(userId)).data.gameId;
+    return get(/databases/$(database)/documents/groups/$(groupId)/votes/$(voteId)/submissions/$(userId)).data.get("gameId", null);
   }
 
   function isVotingOwnSubmission(gameId) {

@@ -2065,12 +2065,23 @@ export default function App() {
       return;
     }
 
-    await setDoc(
-      doc(db, "groups", currentGroupId, "votes", activeVote?.id, "ballots", user.uid),
-      { gameId, submittedAt: Date.now() }
-    );
+    try {
+      await setDoc(
+        doc(db, "groups", currentGroupId, "votes", activeVote?.id, "ballots", user.uid),
+        { gameId, submittedAt: Date.now() }
+      );
 
-    showToast("Vote submitted ✅", "success");
+      showToast("Vote submitted ✅", "success");
+    } catch (e) {
+      console.error("castVote failed:", {
+        code: e?.code || null,
+        message: e?.message || String(e),
+        voteId: activeVote?.id || null,
+        gameId: gameId || null,
+        userId: user?.uid || null,
+      });
+      showToast("Vote could not be saved. Please try again.", "error");
+    }
   }
 
   const closeVote = useCallback(async (opts = {}) => {
