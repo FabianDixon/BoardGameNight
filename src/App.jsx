@@ -22,7 +22,7 @@ import {
 } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import { db } from "./firebase";
-import { pickWeightedWinner, DEFAULT_WEIGHTS } from "./weights/weighting";
+import { pickWeightedWinner, DEFAULT_WEIGHTS, computeVoteMultiplier } from "./weights/weighting";
 import { useMyRatings } from "./hooks/useMyRatings";
 import { useMyCollection } from "./hooks/useMyCollection";
 import { useGames } from "./hooks/useGames";
@@ -211,6 +211,24 @@ function normalizeSessionMetrics(metrics) {
   }
 
   return normalized;
+}
+
+/**
+ * Derive the effective winner from a play record.
+ * Prefers the explicit isWinner flag in overrideResults (when an override exists)
+ * over the raw top-level winnerGameId field, so all downstream consumers
+ * are consistent after a vote-result override is saved.
+ */
+function resolveEffectiveWinnerId(play) {
+  if (Array.isArray(play?.overrideResults) && play.overrideResults.length > 0) {
+    const overrideWinner = play.overrideResults.find(
+      (r) => r.isWinner === true && String(r.gameId || "").trim()
+    );
+    if (overrideWinner) return String(overrideWinner.gameId).trim();
+  }
+  return typeof play?.winnerGameId === "string" && play.winnerGameId.trim()
+    ? play.winnerGameId.trim()
+    : null;
 }
 
 export default function App() {
@@ -742,16 +760,13 @@ export default function App() {
     // Prefer override results written by a manager correction
     const overrideResults = sessionPlayRecord?.overrideResults;
     if (Array.isArray(overrideResults) && overrideResults.length > 0) {
-      const effectiveWinnerId =
-        typeof sessionPlayRecord?.winnerGameId === "string" && sessionPlayRecord.winnerGameId.trim()
-          ? sessionPlayRecord.winnerGameId.trim()
-          : null;
+      const effectiveWinnerId = resolveEffectiveWinnerId(sessionPlayRecord);
       return overrideResults
         .map((r) => ({
           gameId: String(r.gameId || "").trim(),
           title: gameMap.get(String(r.gameId || "").trim())?.title || String(r.gameId || "").trim(),
           votes: Number(r.votes || 0),
-          score: Number(r.votes || 0),
+          score: Number(r.score ?? r.votes ?? 0),
           isWinner: String(r.gameId || "").trim() === effectiveWinnerId,
         }))
         .filter((r) => r.gameId)
@@ -873,9 +888,7 @@ export default function App() {
         }
 
         const data = snap.data() || {};
-        const winnerGameId = typeof data.winnerGameId === "string"
-          ? data.winnerGameId
-          : (activeVote?.winnerGameId || null);
+        const winnerGameId = resolveEffectiveWinnerId(data);
         const resultMode = normalizeResultMode(
           data.resultMode,
           defaultResultMode(winnerGameId)
@@ -913,10 +926,7 @@ export default function App() {
 
   const normalizedSessionHistory = useMemo(() => {
     return (sessionHistory || []).map((play) => {
-      const winnerGameId =
-        typeof play?.winnerGameId === "string" && play.winnerGameId.trim()
-          ? play.winnerGameId.trim()
-          : null;
+      const winnerGameId = resolveEffectiveWinnerId(play);
       const resultMode = normalizeResultMode(
         play?.resultMode,
         defaultResultMode(winnerGameId)
@@ -1149,13 +1159,22 @@ export default function App() {
         return;
       }
 
+      const now = Date.now();
+      const poolMap = new Map(poolDocs.map((p) => [p.id, p]));
+
       const normalized = Array.isArray(overrideResults)
         ? overrideResults
-            .map((r) => ({
-              gameId: String(r.gameId || "").trim(),
-              votes: Math.max(0, Number(r.votes) || 0),
-              isWinner: !!r.isWinner,
-            }))
+            .map((r) => {
+              const gameId = String(r.gameId || "").trim();
+              const votes = Math.max(0, Number(r.votes) || 0);
+              const multiplier = computeVoteMultiplier(
+                poolMap.get(gameId),
+                { now, sessionIndex },
+                effectiveWeights
+              );
+              const score = Number((votes * multiplier).toFixed(4));
+              return { gameId, votes, score, isWinner: !!r.isWinner };
+            })
             .filter((r) => r.gameId)
         : [];
 
@@ -1165,7 +1184,6 @@ export default function App() {
           : null;
 
       const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
-      const now = Date.now();
 
       const payload = {
         groupId: currentGroupId,
@@ -1191,7 +1209,7 @@ export default function App() {
         setIsSavingVoteOverride(false);
       }
     },
-    [user, currentGroupId, activeVote, canManageSession, sessionPlayRecord, showToast]
+    [user, currentGroupId, activeVote, canManageSession, sessionPlayRecord, showToast, poolDocs, sessionIndex, effectiveWeights]
   );
 
   // Save an edit to a past session play record.
