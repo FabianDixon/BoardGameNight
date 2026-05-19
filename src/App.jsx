@@ -2629,7 +2629,7 @@ export default function App() {
     startVoting,
   ]);
 
-  // ✅ Auto: open -> closed when everyone voted
+  // ✅ Auto: open -> closed when every group member has actually voted
   useEffect(() => {
     if (!currentGroupId) return;
     if (!activeVote?.id) return;
@@ -2640,11 +2640,21 @@ export default function App() {
     // feature flag must be enabled
     if (groupSettings?.autoAdvanceWhenAllVoted !== true) return;
 
-    if (!groupMemberCount || groupMemberCount <= 0) return;
+    if (!Array.isArray(members) || members.length === 0) return;
 
     if (autoCloseRef.current.voteId === activeVote.id) return;
 
-    if (ballotsCount >= groupMemberCount) {
+    // Build set of group member userIds
+    const memberUserIds = members.map((m) => m.userId).filter(Boolean);
+    if (memberUserIds.length === 0) return;
+
+    // Build set of ballot userIds
+    const ballotUserIdSet = new Set(voteBallots.map((b) => b.userId).filter(Boolean));
+
+    // Only auto-close if every member userId is present in the ballot set
+    const allMembersVoted = memberUserIds.every((uid) => ballotUserIdSet.has(uid));
+
+    if (allMembersVoted) {
       autoCloseRef.current.voteId = activeVote.id;
       closeVote({ auto: true }).catch((e) => {
         console.error("Auto closeVote failed:", e);
@@ -2656,8 +2666,8 @@ export default function App() {
     activeVote?.id,
     activeVote?.status,
     groupSettings?.autoAdvanceWhenAllVoted,
-    ballotsCount,
-    groupMemberCount,
+    voteBallots,
+    members,
     closeVote,
   ]);
 
