@@ -3517,6 +3517,7 @@ export default function App() {
                         sessionHistory={normalizedSessionHistory}
                         games={games}
                         participantSummaryById={participantSummaryById}
+                        currentUserId={user?.uid}
                       />
                     )}
                     canEditNewness={user?.uid === currentGroup?.ownerId}

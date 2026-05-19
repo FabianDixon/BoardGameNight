@@ -25,6 +25,7 @@ export default function GroupStatisticsPanel({
   sessionHistory = [],
   games = [],
   participantSummaryById = {},
+  currentUserId,
 }) {
   const gameTitleById = useMemo(() => {
     const map = new Map();
@@ -166,6 +167,66 @@ export default function GroupStatisticsPanel({
         return a.label.localeCompare(b.label);
       });
 
+    // Compute personal stats for the current user in this group
+    let personalStats = {
+      sessions: 0,
+      rankedSessions: 0,
+      wins: 0,
+      podiums: 0,
+      winRate: 0,
+      podiumRate: 0,
+    };
+
+    if (currentUserId) {
+      const trimmedCurrentUserId = String(currentUserId || "").trim();
+      
+      for (const play of rows) {
+        const participantIds = new Set();
+        for (const value of Array.isArray(play?.participantIds) ? play.participantIds : []) {
+          const userId = String(value || "").trim();
+          if (!userId) continue;
+          participantIds.add(userId);
+        }
+
+        for (const entry of Array.isArray(play?.placements) ? play.placements : []) {
+          const userId = String(entry?.userId || "").trim();
+          if (!userId) continue;
+          participantIds.add(userId);
+        }
+
+        // Check if current user is in this session
+        if (!participantIds.has(trimmedCurrentUserId)) continue;
+
+        personalStats.sessions += 1;
+
+        // Only count ranked placements
+        const resultMode = String(play?.resultMode || "").trim();
+        if (resultMode === "ranked") {
+          personalStats.rankedSessions += 1;
+
+          for (const entry of Array.isArray(play?.placements) ? play.placements : []) {
+            const userId = String(entry?.userId || "").trim();
+            const place = Number(entry?.place);
+
+            if (userId === trimmedCurrentUserId && Number.isFinite(place) && place >= 1) {
+              if (place === 1) {
+                personalStats.wins += 1;
+              }
+              if (place <= 3) {
+                personalStats.podiums += 1;
+              }
+            }
+          }
+        }
+      }
+
+      // Calculate win rate and podium rate
+      if (personalStats.rankedSessions > 0) {
+        personalStats.winRate = personalStats.wins / personalStats.rankedSessions;
+        personalStats.podiumRate = personalStats.podiums / personalStats.rankedSessions;
+      }
+    }
+
     return {
       totalSessions,
       totalUniqueGames: uniqueGames.size,
@@ -177,8 +238,9 @@ export default function GroupStatisticsPanel({
       mostPlayedGames,
       playerResults,
       medalTable,
+      personalStats,
     };
-  }, [sessionHistory, gameTitleById, participantSummaryById]);
+  }, [sessionHistory, gameTitleById, participantSummaryById, currentUserId]);
 
   if (!stats.totalSessions) {
     return (
@@ -274,6 +336,26 @@ export default function GroupStatisticsPanel({
           </div>
         )}
       </div>
+
+      {stats.personalStats?.rankedSessions > 0 && (
+        <div className="ui-surface p-4 md:p-5 space-y-3">
+          <h4 className="text-lg font-semibold text-white">Your results in this group</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="ui-surface-subtle p-3">
+              <div className="text-xs uppercase tracking-wide text-neutral-500">Ranked sessions</div>
+              <div className="text-xl font-bold text-white mt-1">{stats.personalStats.rankedSessions}</div>
+            </div>
+            <div className="ui-surface-subtle p-3">
+              <div className="text-xs uppercase tracking-wide text-neutral-500">Win rate</div>
+              <div className="text-xl font-bold text-white mt-1">{formatPercent(stats.personalStats.winRate)}</div>
+            </div>
+            <div className="ui-surface-subtle p-3">
+              <div className="text-xs uppercase tracking-wide text-neutral-500">Podium rate</div>
+              <div className="text-xl font-bold text-white mt-1">{formatPercent(stats.personalStats.podiumRate)}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="ui-surface p-4 md:p-5 space-y-3">
         <h4 className="text-lg font-semibold text-white">Medal Table</h4>
