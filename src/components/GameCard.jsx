@@ -9,8 +9,12 @@ function averageRating(game) {
   return (game.ratingTotal / game.ratingCount).toFixed(1);
 }
 
-function canDisplayAggregateRating(game) {
+function hasMinimumRatings(game) {
   return Number(game?.ratingCount || 0) >= MIN_RATINGS_TO_DISPLAY;
+}
+
+function aggregateRatingLabel(game) {
+  return hasMinimumRatings(game) ? averageRating(game) : "–";
 }
 
 export default function GameCard({ game, inCollection, onOpen, onAdd, onRemove, view = "library" }) {
@@ -25,9 +29,7 @@ export default function GameCard({ game, inCollection, onOpen, onAdd, onRemove, 
       <CardBody>
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-lg font-semibold leading-tight text-white line-clamp-2">{game.title}</h2>
-          {canDisplayAggregateRating(game) ? (
-            <span className="ui-chip-yellow shrink-0">⭐ {averageRating(game)}</span>
-          ) : null}
+          <span className="ui-chip-yellow shrink-0">⭐ {aggregateRatingLabel(game)}</span>
         </div>
 
         <p className="text-sm text-neutral-300 line-clamp-2 min-h-[2.5rem]">

@@ -9,8 +9,12 @@ function averageRating(game) {
   return (game.ratingTotal / game.ratingCount).toFixed(1);
 }
 
-function canDisplayAggregateRating(game) {
+function hasMinimumRatings(game) {
   return Number(game?.ratingCount || 0) >= MIN_RATINGS_TO_DISPLAY;
+}
+
+function aggregateRatingLabel(game) {
+  return hasMinimumRatings(game) ? averageRating(game) : "–";
 }
 
 export default function GameDetail({
@@ -109,9 +113,7 @@ export default function GameDetail({
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">{game.title}</h2>
 
             <div className="flex flex-wrap items-center gap-2">
-              {canDisplayAggregateRating(game) ? (
-                <span className="ui-chip-yellow">⭐ Avg {averageRating(game)}</span>
-              ) : null}
+              <span className="ui-chip-yellow">⭐ {aggregateRatingLabel(game)}</span>
               <span className="ui-chip-muted">Your rating: {savedRating || "—"}</span>
               {inCollection ? <span className="ui-chip-green">In your collection</span> : null}
             </div>
