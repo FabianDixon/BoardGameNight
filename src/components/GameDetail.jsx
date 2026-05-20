@@ -2,10 +2,15 @@
 import { useEffect, useMemo, useState } from "react";
 import StarRating from "./StarRating";
 import { getGameTagLabel, normalizeGameTags } from "../utils/gameTags";
+import { MIN_RATINGS_TO_DISPLAY } from "../constants/ratings";
 
 function averageRating(game) {
   if (!game?.ratingCount) return "–";
   return (game.ratingTotal / game.ratingCount).toFixed(1);
+}
+
+function canDisplayAggregateRating(game) {
+  return Number(game?.ratingCount || 0) >= MIN_RATINGS_TO_DISPLAY;
 }
 
 export default function GameDetail({
@@ -104,7 +109,9 @@ export default function GameDetail({
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white">{game.title}</h2>
 
             <div className="flex flex-wrap items-center gap-2">
-              <span className="ui-chip-yellow">⭐ Avg {averageRating(game)}</span>
+              {canDisplayAggregateRating(game) ? (
+                <span className="ui-chip-yellow">⭐ Avg {averageRating(game)}</span>
+              ) : null}
               <span className="ui-chip-muted">Your rating: {savedRating || "—"}</span>
               {inCollection ? <span className="ui-chip-green">In your collection</span> : null}
             </div>
