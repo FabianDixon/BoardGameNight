@@ -1,0 +1,57 @@
+Admin users:
+
+UID: 3KhZesqsMtOpxtlbGHrg1bgryKu2
+    avatarId
+    "dinosaur-rex"
+    (string)
+
+
+    createdAt
+    1770130372020
+    (int64)
+
+
+    nickname
+    "Gatu"
+
+UID: FVEfZJ2uMTdOJW0PgwmM99f9yh72
+    avatarId
+    "mimic-chest"
+    (string)
+
+
+    createdAt
+    1770091887138
+    (int64)
+
+
+    nickname
+    "Dixon"
+
+UID: aC62GVNxgQfetFzznamaJNCB1hx2
+    avatarId
+    "gluttonous-smile"
+    (string)
+
+
+    createdAt
+    1770694433674
+    (int64)
+
+
+    nickname
+    "Perez"
+
+UID: xC7YEHvSrPY3gprsR4NRak1li672
+    avatarId
+    "penguin"
+    (string)
+
+
+    createdAt
+    1770124785626
+    (int64)
+
+
+    nickname
+    "Gabo"

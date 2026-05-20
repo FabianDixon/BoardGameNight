@@ -1861,7 +1861,7 @@ export default function App() {
 
   async function createGroup(name) {
     if (!user) {
-      showToast("Signing in
+      showToast("Signing in… try again in a second.", "info");
       return null;
     }
 
@@ -2063,6 +2063,7 @@ export default function App() {
 
   async function saveGroupMeta(patch) {
     if (!user || !currentGroupId) return;
+    if (currentGroup?.ownerId !== user.uid) {
       showToast("Only the owner can edit group rules.", "error");
       return;
     }
