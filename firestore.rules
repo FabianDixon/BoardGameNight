@@ -49,6 +49,11 @@ function canEditWeights(groupId) {
     || (isGroupMember(groupId) && memberRole(groupId) == "moderator" && moderatorsCanEditWeights(groupId));
 }
 
+// --- admin helpers ---
+function isAdmin() {
+  return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+}
+
 // -------------------------
 // Global games catalog
 // -------------------------
@@ -68,7 +73,8 @@ match /games/{gameId} {
 
   allow update: if signedIn() && (
     (
-      request.resource.data.diff(resource.data).changedKeys()
+      (request.auth.uid == resource.data.createdBy || isAdmin())
+      && request.resource.data.diff(resource.data).changedKeys()
         .hasOnly(['title', 'description', 'imageUrl', 'tags', 'updatedAt'])
       && request.resource.data.title is string
       && request.resource.data.description is string
@@ -92,7 +98,7 @@ match /games/{gameId} {
 
   allow delete: if signedIn()
     && ('createdBy' in resource.data)
-    && resource.data.createdBy == request.auth.uid;
+    && (resource.data.createdBy == request.auth.uid || isAdmin());
 }
 
 // -------------------------
@@ -596,5 +602,10 @@ match /groups/{groupId}/votes/{voteId}/ballots/{userId} {
     && (!disallowOwnSubmission(groupId) || !isVotingOwnSubmission(request.resource.data.gameId));
 }
 
-}
+// -------------------------
+// Admins collection
+// -------------------------
+match /admins/{uid} {
+  allow read: if request.auth != null;
+  allow write: if false;
 }

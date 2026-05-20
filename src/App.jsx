@@ -37,6 +37,7 @@ import { useSessionSubmissions } from "./hooks/useSessionSubmissions";
 import { useMySubmission } from "./hooks/useMySubmission";
 import { useSessionMeta } from "./hooks/useSessionMeta";
 import { useGroupSessionHistory } from "./hooks/useGroupSessionHistory";
+import useIsAdmin from "./hooks/useIsAdmin";
 
 import ProfileCard from "./components/ProfileCard";
 import AddGameForm from "./components/AddGameForm";
@@ -233,6 +234,7 @@ function resolveEffectiveWinnerId(play) {
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const { isAdmin } = useIsAdmin(user?.uid);
   const [profile, setProfile] = useState(null);
   const [nickname, setNickname] = useState("");
 
@@ -1859,7 +1861,7 @@ export default function App() {
 
   async function createGroup(name) {
     if (!user) {
-      showToast("Signing in… try again in a second.", "info");
+      showToast("Signing in
       return null;
     }
 
@@ -2061,7 +2063,6 @@ export default function App() {
 
   async function saveGroupMeta(patch) {
     if (!user || !currentGroupId) return;
-    if (currentGroup?.ownerId !== user.uid) {
       showToast("Only the owner can edit group rules.", "error");
       return;
     }
@@ -3181,6 +3182,7 @@ export default function App() {
               onRate={(value) => rateGame(selectedGameFresh.id, value)}
               onAdd={() => addToCollection(selectedGameFresh.id)}
               onRemove={() => removeFromCollection(selectedGameFresh.id)}
+              canEdit={user?.uid === selectedGameFresh.createdBy || isAdmin}
             />
           ) : (
             <div className="space-y-4">
@@ -3767,8 +3769,7 @@ export default function App() {
           onRate={(value) => rateGame(selectedGameFresh.id, value)}
           onAdd={() => addToCollection(selectedGameFresh.id)}
           onRemove={() => removeFromCollection(selectedGameFresh.id)}
-          // canEdit={user?.uid && selectedGameFresh.createdBy === user.uid}
-          canEdit={!!user}
+          canEdit={user?.uid === selectedGameFresh.createdBy || isAdmin}
           onEdit={() => openEditGame(selectedGameFresh)}
         />
       )}
