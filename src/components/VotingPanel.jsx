@@ -511,10 +511,10 @@ function VotingPanelInner({
   );
 
   const winnerGameId = useMemo(() => {
-    const x = activeVote?.winnerGameId;
+    const x = sessionPlayRecord?.winnerGameId || activeVote?.winnerGameId;
     if (!x) return null;
     return String(x).trim() || null;
-  }, [activeVote?.winnerGameId]);
+  }, [sessionPlayRecord?.winnerGameId, activeVote?.winnerGameId]);
 
   const historyOptions = useMemo(() => {
     return [...(groupGames || [])].sort((a, b) =>

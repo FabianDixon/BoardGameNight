@@ -1182,6 +1182,7 @@ export default function App() {
         typeof winnerGameId === "string" && winnerGameId.trim()
           ? winnerGameId.trim()
           : null;
+      const previousEffectiveWinnerId = resolveEffectiveWinnerId(sessionPlayRecord);
 
       const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
 
@@ -1201,6 +1202,49 @@ export default function App() {
       try {
         setIsSavingVoteOverride(true);
         await setDoc(playRef, payload, { merge: true });
+
+        if (previousEffectiveWinnerId !== effectiveWinnerId) {
+          if (previousEffectiveWinnerId) {
+            const previousWinnerPoolRef = doc(
+              db,
+              "groups",
+              currentGroupId,
+              "pool",
+              previousEffectiveWinnerId
+            );
+            const previousWinnerPoolSnap = await getDoc(previousWinnerPoolRef);
+            if (
+              previousWinnerPoolSnap.exists() &&
+              previousWinnerPoolSnap.data()?.isActive === false
+            ) {
+              await setDoc(
+                previousWinnerPoolRef,
+                {
+                  isActive: true,
+                },
+                { merge: true }
+              );
+            }
+          }
+
+          if (effectiveWinnerId) {
+            const effectiveWinnerPoolRef = doc(
+              db,
+              "groups",
+              currentGroupId,
+              "pool",
+              effectiveWinnerId
+            );
+            await setDoc(
+              effectiveWinnerPoolRef,
+              {
+                isActive: false,
+              },
+              { merge: true }
+            );
+          }
+        }
+
         showToast("Vote results overridden ✅", "success");
       } catch (e) {
         console.error("saveVoteOverride failed:", e);
