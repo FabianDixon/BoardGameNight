@@ -2,10 +2,10 @@ Project Context — Board Game App
 
 Document Marker (Context Changelog)
 
-- Last verified: 2026-04-25
-- Verification baseline: code + rules + recent history through commit 1ec5e8c
+- Last verified: 2026-05-20
+- Verification baseline: code + rules + recent history through commit c95d390
 - Policy note: Game metadata editing is intentionally collaborative for now (not yet owner-restricted by design).
-- Latest doc refresh highlights: roadmap/status alignment after shipping group statistics v1, participant-aware session tooling, vote-result override, custom session metrics, token counters, and guest-aware analytics aggregation.
+- Latest doc refresh highlights: voting reliability fixes (cast-vote error handling, auto-close correctness), vote-override consistency fixes (effective winner resolution, weighted override scores, pool active-state sync), and group statistics v1.1 personal win/podium rates.
 
 Overview
 
@@ -154,8 +154,10 @@ Recent work has included:
 	•	introduction of past-session editing from the History tab for correcting saved session records
 	•	completion of owner/moderator/creator-based play-record edit permissions in Firestore rules
 	•	manual vote-result override flow ("Edit results") for post-close corrections
+	•	vote reliability hardening in production flows (cast-vote failure handling and safer auto-close logic)
+	•	vote-override consistency pass (effective winner derivation, weighted override scores, and pool-state reconciliation)
 	•	custom numeric session metrics support in both closed-session and past-session editors
-	•	group statistics v1 (overview, most played, player results, medal table, co-op rate)
+	•	group statistics v1 plus v1.1 personal in-group rates (ranked sessions, win rate, podium rate)
 	•	implementation of the personal Analytics tab (see Post-Stabilization Status below)
 	•	analytics expansion to full cross-group + guest participation coverage with deduped play aggregation
 
@@ -232,6 +234,11 @@ Completed work includes:
 	•	custom session metrics capture/edit support in VotingPanel and PastSessionEditModal
 	•	vote result override editor for closed sessions (manual corrections without mutating ballot docs)
 	•	Firestore rules hardening: game delete ownership check, role enum validation, and constrained play-record edits
+	•	voting bug fix in Firestore rules for own-submission checks by safely handling null submission gameId reads
+	•	auto-close voting fix: session only auto-closes when every current group member has an explicit ballot
+	•	vote casting error handling for failed ballot writes (user feedback + structured diagnostics)
+	•	override-result consistency fixes: effective-winner resolution from overrideResults, weighted score persistence, and winner swap pool-state synchronization
+	•	group statistics enhancement: personal in-group ranked sessions, win rate, and podium rate
 
 The codebase is now considered stable enough to move out of the cleanup-first phase and into targeted product work, while still preferring focused patches over broad rewrites.
 
@@ -278,6 +285,7 @@ Current Product Roadmap
 	•	Shipped:
 		•	personal analytics tab (cross-group + guest sessions)
 		•	group statistics v1 tab (overview, most played, participant results, medals, co-op rate)
+		•	group statistics v1.1 personal panel (your ranked sessions, win rate, podium rate)
 	•	Next analytics priorities:
 		•	public player profiles — let other users view your analytics via group click-through
 		•	privacy toggle for public/private profile
@@ -389,6 +397,7 @@ Current Known Follow-Up Items
 
 The highest-value near-term follow-up items are now:
 	•	validate both personal analytics and group statistics with real user data and fix edge cases
+	•	monitor the vote-override correction flow in real usage (winner consistency, score visibility, pool-state transitions)
 	•	design and implement public player profiles with group click-through discovery and privacy toggle
 	•	iterate analytics depth (trend views, richer breakdowns, and/or longitudinal summaries)
 	•	continue Session Participants v1 polish (lookup UX, repeated guest flows, larger-session ergonomics)
