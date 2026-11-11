@@ -56,7 +56,7 @@ function normalizeTagKey(value) {
     .toLowerCase()
     .replace(/[’']/g, "")
     .replace(/&/g, " and ")
-    .replace(/[\/]+/g, " ")
+    .replace(/[/]+/g, " ")
     .replace(/[^a-z0-9\s-]+/g, " ")
     .replace(/[-_]+/g, " ")
     .replace(/\s+/g, " ")
