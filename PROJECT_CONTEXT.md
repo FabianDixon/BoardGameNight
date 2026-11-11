@@ -4,8 +4,16 @@ Document Marker (Context Changelog)
 
 - Last verified: 2026-05-20
 - Verification baseline: code + rules + recent history through commit c95d390
-- Policy note: Game metadata editing is intentionally collaborative for now (not yet owner-restricted by design).
+- Policy note: Game metadata edits and deletes are allowed only to the game creator or an administrator (`admins/{uid}.isAdmin == true`). Signed-in users may still update rating aggregates.
 - Latest doc refresh highlights: voting reliability fixes (cast-vote error handling, auto-close correctness), vote-override consistency fixes (effective winner resolution, weighted override scores, pool active-state sync), and group statistics v1.1 personal win/podium rates.
+- Audit update (2026-11-10): group hidden tags now also exclude games from new
+  submissions and newly constructed voting candidate lists, not just the Group
+  Collection display. Existing pool records and already-open candidate
+  snapshots are preserved. See [the audit log](docs/PROJECT_AUDIT.md) for the
+  rationale, compatibility decisions, verification, and remaining limitations.
+- Audit update (2026-11-10): global game metadata edits are restricted to the
+  creator or an administrator in both Firestore rules and the UI. Rating
+  aggregate updates remain separately available to signed-in users.
 
 Overview
 

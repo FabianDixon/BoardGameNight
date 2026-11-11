@@ -28,10 +28,19 @@ npm run test:rules:verbose
 - Tests run against the local Firestore Emulator only.
 - The script uses a demo project ID (`demo-boardgame-night`), so it does not touch production/staging data.
 - Rules under test: `firestore.rules`
-- Test file location: `tests/rules/firestore.rules.test.mjs`
+- Tests: `tests/rules/firestore.rules.test.mjs`,
+  `tests/session-creation.rules.test.mjs`, and
+  `tests/hidden-tags.rules.test.mjs`. They run sequentially because they clear
+  the same demo project's emulator data.
+
+The separate `npm run test:unit` command runs loading, session reliability,
+hidden-tag eligibility, game permissions, and modal accessibility tests without
+the emulator.
 
 ## Covered baseline cases
 
-- `/games/{gameId}`: collaborative metadata edits remain open; delete restricted to creator.
+- `/games/{gameId}`: metadata edits and deletes are allowed only to the creator
+  or an administrator (`admins/{uid}.isAdmin == true`); signed-in rating
+  aggregate updates remain available separately.
 - `/groups/{groupId}/members/{userId}`: self profile sync allowed; self role escalation denied; owner role changes allowed.
 - `/groups/{groupId}/plays/{playId}`: owner/moderator/creator edits allowed; normal member edits denied.

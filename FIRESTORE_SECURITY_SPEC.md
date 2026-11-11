@@ -117,16 +117,15 @@ firestore/
 |-----------|-----|-----------|---------|
 | **READ** | Anyone (public) | None | All signed-in users can read any game. Anonymous users CANNOT read. |
 | **CREATE** | Signed-in users | • User is authenticated<br>• `createdBy == request.auth.uid`<br>• Must include: title, description, createdAt, ratingTotal, ratingCount<br>• Optional: tags (if present, must be list)<br>• ratingTotal and ratingCount must be numbers | Anyone authenticated can add a game to the global catalog. Initial ratings are 0/0. |
-| **UPDATE** | Signed-in users | **Either:**<br>1) Edit metadata: title, description, imageUrl, tags, updatedAt<br>   - No ownership check (metadata is collaborative)<br>   - All fields type-validated<br>**OR**<br>2) Update ratings: ratingTotal, ratingCount<br>   - No source validation (client aggregates) | Metadata updates are open to any user (beta: intentional permissiveness). Ratings are updated by client-side aggregation from `/ratings` docs. |
-| **DELETE** | Signed-in users | ⚠️ **BROKEN: No check**<br>Current rule: `allow delete: if signedIn();`<br>✅ **MUST FIX:** Should be `&& resource.data.createdBy == request.auth.uid;` | Currently ANY user can delete ANY game. This is a critical bug. |
+| **UPDATE** | Creator or administrator for metadata; signed-in users for rating aggregates | **Either:**<br>1) Edit metadata: title, description, imageUrl, tags, updatedAt<br>   - `createdBy == request.auth.uid` or `admins/{uid}.isAdmin == true`<br>   - All fields type-validated<br>**OR**<br>2) Update ratings: ratingTotal, ratingCount<br>   - No source validation (client aggregates) | Metadata updates are creator/administrator-only. Rating aggregates remain separately writable by signed-in users. |
+| **DELETE** | Creator or administrator | `resource.data.createdBy == request.auth.uid` or `admins/{uid}.isAdmin == true` | Other signed-in users cannot delete games. |
 
 **Anonymous Access:** NO. Games are only visible to signed-in users.
 
-**Broader-Beta Readiness:** ❌ **BLOCKING** — Delete rule is broken. FIX REQUIRED.
+**Broader-Beta Readiness:** ✅ **OK for game metadata/delete permissions** — creator or administrator checks are enforced.
 
 **Additional Notes:**
-- Metadata edits (title, description) are currently open to anyone. This is intentional for beta to allow collaborative curation, but risky. Should require `createdBy` check before broader production.
-- No validation on ratingTotal/ratingCount arithmetic; trusts client-side aggregation.
+- Rating aggregate arithmetic is not validated; the client updates aggregates from `/ratings` docs.
 
 ---
 
@@ -501,23 +500,19 @@ firestore/
 
 ### 🔴 CRITICAL FIXES REQUIRED
 
-**1. Game Deletion Permission Check**
+**1. Game Deletion Permission Check — implemented**
 ```
 Location: /games/{gameId} — delete rule
-Current:  allow delete: if signedIn();
-Required: allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
-Impact:   Prevents users from deleting games they didn't create
-Severity: CRITICAL — currently ANY user can delete ANY game
+Current:  creator or administrator (`admins/{uid}.isAdmin == true`)
+Status:   Implemented and covered by Firestore rules tests
 ```
 
-**2. Game Metadata Editing Should Validate Creator**
+**2. Game Metadata Editing Permission — implemented**
 ```
 Location: /games/{gameId} — update rule (metadata path)
-Current:  allow update: if signedIn() && ... (NO creator check on metadata edits)
-Required: && resource.data.createdBy == request.auth.uid (for metadata edits)
-Impact:   Prevents unauthorized game vandalism
-Severity: HIGH — allows any user to corrupt game catalog
-Note:     Rating updates remain open (aggregated server-side)
+Current:  creator or administrator (`admins/{uid}.isAdmin == true`)
+Status:   Implemented and covered by creator, administrator, and unauthorized-user tests
+Note:     Rating aggregate updates remain separately available to signed-in users
 ```
 
 **3. Past-Session Editing Permissions**
@@ -564,15 +559,12 @@ Rationale: Acceptable for controlled beta; should be restricted pre-monetization
 Action:   Log anonymous rating sources; plan to restrict later
 ```
 
-### Beta Exception #2: Game Metadata Edits Are Open (Except Delete)
+### Retired Beta Exception #2: Open Game Metadata Edits
 ```
 Path: /games/{gameId} — update rule
-Behavior: Any user can edit title, description, imageUrl, tags (not owned/creator-checked)
-Impact: Global game catalog can be modified by any member
-Rationale: Allows collaborative curation during beta
-Risk: Vandalism is possible but visible in group usage
-Action:   Add createdBy check before broader production release
-Timeline: Fix this ASAP; should not persist
+Previous behavior: Any signed-in user could edit title, description, imageUrl, and tags
+Current behavior: Creator or administrator only; rating aggregates remain separately writable
+Status:   Retired; enforcement is in Firestore rules and UI, with regression tests
 ```
 
 ### Beta Exception #3: Group Members Can Remove Games Freely
@@ -601,28 +593,11 @@ Timeline: Recommended fix soon
 
 ## Part E: Data Model Changes That Would Improve Security
 
-### 🔍 Issue #1: Game Ownership Not Enforced at Metadata Level
+### ✅ Resolved Issue #1: Game Metadata Permission
 ```
-Problem:  /games/{gameId} allows metadata edits (title, description) without
-          creator/ownership check. Rationale was "collaborative curation"
-          but this is unsafe for broader beta.
-          
-Current:  
-  allow update: if signedIn() && (
-    (
-      request.resource.data.diff(...).hasOnly([metadata fields])
-      && validations...
-      // NO CREATOR CHECK HERE
-    )
-    || (ratingTotal/ratingCount updates)
-  );
-
-Recommendation:
-  Split into two rules:
-  1) Metadata edits (title, etc.) → REQUIRE createdBy == request.auth.uid
-  2) Rating updates → REMAIN open (aggregated)
-  
-  This clarifies: creator owns metadata; community owns ratings aggregate.
+Current: Metadata updates require the creator or an administrator
+         (`admins/{uid}.isAdmin == true`); rating aggregate updates remain separate.
+Verification: Covered by `tests/rules/firestore.rules.test.mjs`.
 ```
 
 ### 🔍 Issue #2: Role Strings Not Enumerated
@@ -706,7 +681,7 @@ Solution: This is BY DESIGN for groups. Acceptable. Document in privacy policy.
 
 | Path | Read | Create | Update | Delete | Anonymous | Beta-Ready? |
 |------|------|--------|--------|--------|-----------|-------------|
-| `/games/{gameId}` | Public | Signed-in (creator) | ❌ **NO OWNER CHECK** | ❌ **NO OWNER CHECK** | NO | ❌ BROKEN |
+| `/games/{gameId}` | Public | Signed-in (creator) | Creator/admin for metadata; signed-in for rating aggregates | Creator/admin | NO | ✅ OK |
 | `/ratings/{ratingId}` | Public | Self-only | Self-only | Self-only | NO | ✅ OK |
 | `/users/{userId}` | Self-only | Self-only | Self-only | Self-only | NO | ✅ OK |
 | `/users/{userId}/collection/{g}` | Self-only | Self-only | Self-only | Self-only | NO | ✅ OK |
@@ -731,32 +706,26 @@ Solution: This is BY DESIGN for groups. Acceptable. Document in privacy policy.
 
 ### Status Assessment
 
-**Currently Safe Paths:** ~16/18  
-**Broken/Risky Paths:** 2/18
+**Previously identified risky paths:** 2/18 (historical checklist; game metadata/delete permissions are now enforced)
 
-- **`/games/{gameId}`** — delete and metadata edit rules lack ownership checks
 - **`/groups/{groupId}/plays/{playId}`** — update rule allows any member
 
 ### Recommendation for Broader Beta
 
 **MUST FIX before launch:**
-1. Game deletion: Add creator check
-2. Game metadata edit: Add creator check (or accept collaborative curation beta risk)
-3. Past-session edit: Add owner/moderator check
+1. Past-session edit: Add owner/moderator check
 
 **SHOULD FIX soon after (not blocking, but high-priority):**
-4. Group game deletion: Review product intent; consider restricting
-5. Role validation: Add enum check in rules
-6. Anonymous account cleanup: Implement retention policy
+2. Group game deletion: Review product intent; consider restricting
+3. Role validation: Add enum check in rules
+4. Anonymous account cleanup: Implement retention policy
 
 **CAN DEFER (post-beta):**
-7. Audit trail for session edits
-8. Cloud Function for ownersCount synchronization
-9. Anonymous account identity restrictions
+5. Audit trail for session edits
+6. Cloud Function for ownersCount synchronization
+7. Anonymous account identity restrictions
 
 ### Final Verdict
 
-**Broader Beta Readiness: ❌ NOT READY**  
-**Reason:** Two critical security gaps in game management and past-session editing.  
-**Timeline to Fix:** 1-2 hours (straightforward rule updates).  
-**Risk Level After Fix:** LOW — architecture is sound; fixes are surgical.
+**Broader Beta Readiness:** Reassess remaining findings against the current rules.
+**Game catalog:** Creator/administrator metadata and delete checks are implemented; rating aggregate updates remain separately writable by signed-in users.
