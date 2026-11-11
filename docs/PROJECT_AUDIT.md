@@ -150,7 +150,9 @@ careful handling rather than retroactively changing their candidate snapshots.
   mismatched effective winners and legacy play fields, and require a
   rules-verifiable effective winner when restoring hidden historical winners.
   A no-winner correction with nonempty result rows is rejected when its hidden
-  or missing previous winner cannot be safely restored.
+  or missing previous winner cannot be safely restored. Corrections also
+  verify session markers before restoring an inactive previous winner; missing
+  history or unverifiable markers produce an explicit error.
 - **Test entry points:** `npm run test:unit` runs the new loading and session
   reliability and hidden-tag unit tests; `npm run test:rules` includes
   session-creation race and hidden-tag coverage. Rules suites run sequentially
@@ -196,10 +198,10 @@ limitation described below; the audit is not a clean bill of health.
 ### Integration verification
 
 - `npm run test:unit`: 25 tests passed on follow-up.
-- `npm run test:rules`: 66 tests passed against the local demo Firestore
+- `npm run test:rules`: 71 tests passed against the local demo Firestore
   emulator. No production data was used.
-- `npm run build`: passed; the main JavaScript chunk was 795.03 kB minified
-  (232.09 kB gzip). The original baseline was 775.92 kB minified, so this is
+- `npm run build`: passed; the main JavaScript chunk was 795.65 kB minified
+  (232.27 kB gzip). The original baseline was 775.92 kB minified, so this is
   not a measured bundle-size or loading-speed optimization.
 - `npm run lint`: passed on follow-up; the original baseline had 21 errors
   and 3 warnings.
