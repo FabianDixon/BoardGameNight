@@ -471,8 +471,6 @@ function VotingPanelInner({
 
   const canSubmit = !!user && !!currentGroupId && status === VOTE_STATUS.COLLECTING;
   const canVote = !!user && !!currentGroupId && status === VOTE_STATUS.OPEN;
-  const isDesktopViewport =
-    typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
 
   const hasSubmitted = !!mySubId || isNoSubmission;
   const alreadyVoted = !!myBallot?.gameId;
@@ -1797,7 +1795,6 @@ function VotingPanelInner({
         variant="pill"
         label={hasSubmitted ? "Change Submission" : "Submit"}
         disabled={submitDisabled}
-        bottom={isDesktopViewport ? 16 : 96}
         onClick={handleSubmit}
       >
         {hasSubmitted ? "Change" : "Submit"}
@@ -1808,7 +1805,6 @@ function VotingPanelInner({
         variant="pill"
         label={alreadyVoted ? "Voted" : "Vote"}
         disabled={voteDisabled}
-        bottom={isDesktopViewport ? 16 : 96}
         onClick={handleVote}
       >
         Vote

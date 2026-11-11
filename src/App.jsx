@@ -46,7 +46,8 @@ import GroupStatisticsPanel from "./components/GroupStatisticsPanel";
 import GroupToolsPanel from "./components/GroupToolsPanel";
 import UserAnalyticsPanel from "./components/UserAnalyticsPanel";
 import Toast from "./components/ui/Toast";
-import Fab from "./components/ui/Fab";
+import ExpandableFab from "./components/ui/ExpandableFab";
+import { restoreQuickActionsFocus } from "./components/ui/quickActionsFocus";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
 import PastSessionEditModal from "./components/PastSessionEditModal";
 import { buildSessionMailto, copyJsonToClipboard } from "./utils/emailExport";
@@ -137,7 +138,7 @@ function Modal({ open, title, onClose, children, dismissible = true, restoreFocu
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("focusin", handleFocusIn);
       if (!wasTopModal) return;
-      const target = previousFocus?.isConnected && previousFocus !== document.body
+      const target = previousFocus?.isConnected && previousFocus !== document.body && !previousFocus.closest?.("[inert], [hidden]")
         ? previousFocus
         : restoreFocusRef.current?.();
       const nextModal = openModals[openModals.length - 1];
@@ -200,6 +201,8 @@ function normalizePlayedGameIds(playedGameIds, winnerGameId) {
 
   return [winnerId, ...uniqueIds.filter((id) => id !== winnerId)];
 }
+
+export { Modal };
 
 const SESSION_RESULT_MODES = new Set([
   "ranked",
@@ -3021,15 +3024,19 @@ export default function App() {
 
   const showFab =
     !showAuthPrompt &&
-    (activeTab === APP_TAB.LIBRARY || activeTab === APP_TAB.COLLECTION) &&
+    !savedAccountRequiredOpen &&
+    !winnerModal &&
+    !editingPastPlay &&
     !showGameDetail &&
-    !isAddGameOpen &&
     !isEditGameOpen;
 
   const topLevelTabs = [
     { key: APP_TAB.LIBRARY, icon: "📚", label: "Library" },
     { key: APP_TAB.COLLECTION, icon: "🧺", label: "Collection" },
     { key: APP_TAB.GROUP, icon: "👥", label: "Groups" },
+  ];
+  const desktopTabs = [
+    ...topLevelTabs,
     { key: APP_TAB.ANALYTICS, icon: "📊", label: "Analytics" },
     { key: APP_TAB.PROFILE, icon: "👤", label: "Profile" },
   ];
@@ -3044,9 +3051,6 @@ export default function App() {
     setSelectedGame(null);
     setSearchQuery("");
   }
-
-  const isDesktopViewport =
-    typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches;
 
   return (
     <div className="min-h-screen bg-neutral-950 p-6 pb-32 md:pb-8 text-neutral-100">
@@ -3065,7 +3069,7 @@ export default function App() {
 
           {!showAuthPrompt && (
             <nav aria-label="Main navigation" className="hidden md:flex items-center gap-2">
-              {topLevelTabs.map((t) => {
+              {desktopTabs.map((t) => {
                 const isActive = activeTab === t.key;
                 return (
                   <button
@@ -3172,7 +3176,7 @@ export default function App() {
         open={isAddGameOpen}
         title="Add new game"
         onClose={() => setIsAddGameOpen(false)}
-        restoreFocus={() => document.querySelector('button[aria-label="Add new game"]')}
+        restoreFocus={restoreQuickActionsFocus}
       >
         <AddGameForm form={addGameForm} setForm={setAddGameForm} onSubmit={addGame} />
       </Modal>
@@ -3846,18 +3850,19 @@ export default function App() {
         </>
       )}
 
-      {/* Floating Add Game button (FAB) */}
-      <Fab
-        show={showFab}
-        onClick={() => setIsAddGameOpen(true)}
-        label="Add new game"
-        bottom={isDesktopViewport ? 24 : 96}
-      />
+      {showFab && (
+        <ExpandableFab
+          onAddGame={() => setIsAddGameOpen(true)}
+          onSettings={() => handleTopLevelTabClick(APP_TAB.PROFILE)}
+          onProfile={() => handleTopLevelTabClick(APP_TAB.ANALYTICS)}
+          currentDestination={activeTab === APP_TAB.PROFILE ? "settings" : activeTab === APP_TAB.ANALYTICS ? "profile" : null}
+        />
+      )}
 
       {!showAuthPrompt && (
         <nav aria-label="Main navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-700 bg-neutral-900/95 backdrop-blur md:hidden">
           <div className="mx-auto w-full max-w-3xl px-3 py-2">
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {topLevelTabs.map((t) => {
                 const isActive = activeTab === t.key;
                 return (
