@@ -46,7 +46,7 @@ import GroupStatisticsPanel from "./components/GroupStatisticsPanel";
 import GroupToolsPanel from "./components/GroupToolsPanel";
 import UserAnalyticsPanel from "./components/UserAnalyticsPanel";
 import Toast from "./components/ui/Toast";
-import ExpandableFab from "./components/ui/ExpandableFab";
+import ExpandableFab from "./components/ui/ConnectedExpandableFab";
 import { restoreQuickActionsFocus } from "./components/ui/quickActionsFocus";
 import GroupSettingsPanel from "./components/GroupSettingsPanel";
 import PastSessionEditModal from "./components/PastSessionEditModal";

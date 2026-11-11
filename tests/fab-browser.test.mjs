@@ -83,13 +83,13 @@ test("real React modal restores FAB focus and landscape actions remain clickable
       await wait(() => document.querySelector("[data-quick-actions-toggle]"));
       const toggle = document.querySelector("[data-quick-actions-toggle]");
       const toggleRect = toggle.getBoundingClientRect();
-      if (toggleRect.width !== 48 || toggleRect.height !== 48) throw Error("Unexpected FAB size");
+      if (toggleRect.width !== 44 || toggleRect.height !== 44) throw Error("Unexpected FAB size");
       toggle.click();
       await wait(() => document.querySelector("[aria-label='Add game']")?.getClientRects().length);
       for (const [label, icon] of [["Add game", "＋"], ["Settings", "⚙"], ["Personal stats", "📊"]]) {
         const action = document.querySelector(\`[aria-label="\${label}"]\`);
         const rect = action.getBoundingClientRect();
-        if (rect.width !== 48 || rect.height !== 48 || action.textContent.trim() !== icon) {
+        if (rect.width !== 44 || rect.height !== 44 || action.textContent.trim() !== icon) {
           throw Error(\`Unexpected icon-only action: \${label}\`);
         }
       }
@@ -110,37 +110,216 @@ test("real React modal restores FAB focus and landscape actions remain clickable
       return true;
     })()`);
 
+    const helpers = `
+      const wait = async (condition, message = "Timed out waiting for " + "condition") => {
+        for (let i = 0; i < 150; i++) {
+          if (condition()) return;
+          await new Promise(r => setTimeout(r, 20));
+        }
+        throw Error(message + " :: " + condition.toString());
+      };
+      const $ = (selector) => document.querySelector(selector);
+      const toggle = () => $("[data-quick-actions-toggle]");
+      const contextual = () => $("[data-contextual-quick-action]");
+      const menuOpen = () => $("[aria-label='Quick actions']").getBoundingClientRect().height > 0;
+      const open = async () => { if (!menuOpen()) toggle().click(); await wait(menuOpen, "menu did not open"); };
+      const closeMenu = async () => { if (menuOpen()) toggle().click(); await wait(() => !menuOpen()); };
+      const tile = (title) => [...document.querySelectorAll("button")].find(b => b.textContent.includes(title) && !b.closest("[aria-label='Quick actions']"));
+      const go = (selector) => $(selector).click();
+      const settle = () => new Promise(r => setTimeout(r, 60));
+    `;
+
+    // Lifecycle: contextual action follows the visible voting panel and never leaks.
+    await send("Emulation.setDeviceMetricsOverride", { width: 568, height: 640, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`(async () => {
+      ${helpers}
+      window.__calls.length = 0;
+      go("[data-status='open']");
+      await wait(() => $("[data-contextual-badge]"), "collapsed trigger lacks badge");
+      if (!/Vote.*unavailable: Select a game first/.test(toggle().getAttribute("aria-label"))) throw Error("Trigger label lacks contextual action: " + toggle().getAttribute("aria-label"));
+      const t = toggle().getBoundingClientRect();
+      const caret = toggle().querySelector("span");
+      if (t.width !== 44 || t.height !== 44) throw Error("Trigger size wrong");
+      if (!["inline-block", "block"].includes(getComputedStyle(caret).display)) throw Error("Caret must be transformable, got " + getComputedStyle(caret).display);
+      const matrix = new DOMMatrix(getComputedStyle(caret).transform);
+      if (matrix.m42 !== 3) throw Error("Caret transform not applied: " + getComputedStyle(caret).transform);
+      const range = document.createRange();
+      range.selectNodeContents(caret);
+      const before = range.getBoundingClientRect();
+      caret.style.transform = "none";
+      const base = (range.getBoundingClientRect().top);
+      caret.style.transform = "";
+      if (Math.abs(before.top - base - 3) > 0.5) throw Error("Caret glyph did not move 3px: " + (before.top - base));
+      const nav = $("[data-fixture-nav]").getBoundingClientRect();
+      if (t.bottom > nav.top - 8) throw Error("Trigger overlaps navigation");
+      if (Math.round(innerHeight - t.bottom) !== 96) throw Error("Trigger bottom offset should be 96px");
+      const badge = $("[data-contextual-badge]").getBoundingClientRect();
+      if (badge.left < t.left - 6 || badge.top < t.top - 6) throw Error("Badge outside trigger");
+
+      const panelStatus = () => $("[data-quick-action-status]")?.textContent || "";
+      if (!/Vote.*unavailable: Select a game first/.test(panelStatus())) throw Error("Panel lacks visible disabled reason: " + panelStatus());
+      if ($("[data-quick-action-status] svg").getBoundingClientRect().width === 0) throw Error("Panel icon not visible");
+
+      // Disabled contextual action: menu still opens, focus lands on a normal action, click is inert.
+      await open();
+      if (contextual().getAttribute("aria-disabled") !== "true") throw Error("Vote should be disabled before selection");
+      if (document.activeElement === contextual() || document.activeElement.getAttribute("aria-label") !== "Add game") throw Error("Disabled action received initial focus");
+      const rect = contextual().getBoundingClientRect();
+      if (rect.width < 44 || rect.height < 44) throw Error("Contextual touch target too small");
+      contextual().click();
+      await settle();
+      if (!menuOpen() || window.__calls.length) throw Error("Disabled action must be inert");
+      await closeMenu();
+
+      // Selecting a game enables it; stale selection never invokes an old handler.
+      tile("Catan").click();
+      await open();
+      await wait(() => contextual().getAttribute("aria-disabled") === null, "Vote not enabled");
+      if (contextual().querySelector("svg").getAttribute("class").indexOf("green") < 0) throw Error("Vote icon is not green");
+      await closeMenu();
+      if (!/Vote.*ready.*green check/.test(panelStatus())) throw Error("Panel lacks ready text: " + panelStatus());
+      tile("Azul").click();
+      await open();
+      contextual().click();
+      await wait(() => window.__calls.length === 1, "vote callback not called");
+      if (JSON.stringify(window.__calls[0]) !== JSON.stringify(["vote", "group-a", "g2"])) throw Error("Stale selection voted: " + JSON.stringify(window.__calls));
+      if (menuOpen() || document.activeElement !== toggle()) throw Error("Menu should close and focus trigger");
+      await wait(() => /Voted.*unavailable: Your vote is recorded/.test(toggle().getAttribute("aria-label")), "voted state missing");
+      if (!/Voted.*your vote is recorded/.test(panelStatus())) throw Error("Panel lacks voted state: " + panelStatus());
+      await open();
+      if (contextual().getAttribute("aria-label") !== "Voted, unavailable: Your vote is recorded") throw Error("Voted label wrong");
+      contextual().click();
+      await settle();
+      if (window.__calls.length !== 1) throw Error("Voted action should not write again");
+      await closeMenu();
+
+      // Leaving the panel: other tab, inline detail, and return do not leak.
+      for (const screen of ["other", "detail"]) {
+        go("[data-screen='" + screen + "']");
+        await wait(() => !contextual() && !$("[data-contextual-badge]"), "action leaked on " + screen);
+      }
+      if ($("[data-quick-actions-toggle]")) throw Error("FAB should be hidden on detail");
+      go("[data-screen='other']");
+      await wait(() => toggle());
+      await open();
+      if (contextual() || /Vote/.test(toggle().getAttribute("aria-label"))) throw Error("Leaked after returning to other tab");
+      await closeMenu();
+
+      // Phase changes swap Vote for Submit, and closed has no action.
+      go("[data-screen='voting']");
+      await wait(() => $("[data-contextual-badge]"));
+      go("[data-status='collecting']");
+      await wait(() => /Submit/.test(toggle().getAttribute("aria-label")), "Submit missing");
+      await open();
+      if (contextual().dataset.contextualQuickAction !== "submit" || /Vote/.test(contextual().getAttribute("aria-label"))) throw Error("Phase did not switch action");
+      if (contextual().getAttribute("aria-disabled") !== "true") throw Error("Submit enabled without selection");
+      await closeMenu();
+      tile("Catan").click();
+      await open();
+      contextual().click();
+      await wait(() => window.__calls.length === 2, "submit callback not called");
+      if (JSON.stringify(window.__calls[1]) !== JSON.stringify(["submit", "group-a", "g1"])) throw Error("Wrong submit payload");
+      await wait(() => /Change Submission/.test(toggle().getAttribute("aria-label")), "Change state missing");
+      await wait(() => /Change Submission.*unavailable: Select a game first/.test(panelStatus()), "Panel lacks change state: " + panelStatus());
+
+      // Remote phase change removes a focused contextual button: focus stays in the menu.
+      await open();
+      contextual().focus();
+      if (document.activeElement !== contextual()) throw Error("Contextual action not focusable");
+      go("[data-status='closed']");
+      await wait(() => !contextual(), "action not removed");
+      await settle();
+      if (!menuOpen() || document.activeElement?.getAttribute("aria-label") !== "Add game") throw Error("Focus not restored into menu: " + document.activeElement?.outerHTML?.slice(0, 80));
+      await closeMenu();
+      go("[data-status='open']");
+      await wait(() => contextual() || $("[data-contextual-badge]"));
+      // Focus outside the menu is never stolen.
+      await open();
+      $("[data-outside]").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      $("[data-outside]").focus();
+      await wait(() => !menuOpen());
+      go("[data-status='collecting']");
+      await settle();
+      if (document.activeElement !== $("[data-outside]")) throw Error("Focus stolen from outside field");
+      go("[data-status='closed']");
+      await wait(() => !$("[data-contextual-badge]"));
+      if (document.activeElement !== $("[data-outside]")) throw Error("Focus stolen on close");
+      // Menu closed but trigger holds focus: removal keeps focus on the trigger.
+      go("[data-status='open']");
+      await wait(() => $("[data-contextual-badge]"));
+      toggle().focus();
+      go("[data-status='closed']");
+      await wait(() => !$("[data-contextual-badge]"));
+      if (document.activeElement !== toggle()) throw Error("Trigger lost focus");
+      go("[data-status='closed']");
+      await wait(() => !contextual() && !$("[data-contextual-badge]"), "action leaked after close");
+
+      // Realistic group transition: coincident vote ids, uncast selection, per-group state.
+      go("[data-status='open']");
+      await wait(() => $("[data-contextual-badge]"));
+      go("[data-group='group-b']");
+      await wait(() => /Vote.*unavailable: Select a game first/.test(panelStatus()), "group-b should start unselected and unvoted");
+      tile("Catan").click();
+      await wait(() => /ready/.test(panelStatus()));
+      go("[data-group='group-a']");
+      await wait(() => /Voted/.test(panelStatus()), "group-a keeps its own ballot");
+      go("[data-group='group-b']");
+      await wait(() => /unavailable: Select a game first/.test(panelStatus()), "selection leaked across groups");
+      await open();
+      if (contextual().getAttribute("aria-disabled") !== "true") throw Error("Selection leaked into FAB");
+      contextual().click();
+      await settle();
+      if (window.__calls.length !== 2) throw Error("Stale selection voted in other group");
+      await closeMenu();
+      tile("Azul").click();
+      await open();
+      contextual().click();
+      await wait(() => window.__calls.length === 3, "group-b vote not called");
+      if (JSON.stringify(window.__calls[2]) !== JSON.stringify(["vote", "group-b", "g2"])) throw Error("Wrong group target: " + JSON.stringify(window.__calls[2]));
+      go("[data-group='group-a']");
+      await wait(() => /Voted/.test(panelStatus()));
+      if (window.__calls.length !== 3) throw Error("Unexpected extra write");
+      return true;
+    })()`);
+
     for (const height of [320, 240]) {
       await send("Emulation.setDeviceMetricsOverride", { width: 568, height, deviceScaleFactor: 1, mobile: false });
       const result = await evaluate(`(async () => {
-        const wait = async (condition) => {
-          for (let i = 0; i < 100; i++) {
-            if (condition()) return;
-            await new Promise(r => setTimeout(r, 20));
-          }
-          throw Error("Timed out waiting for quick actions");
-        };
-        const toggle = document.querySelector("[data-quick-actions-toggle]");
-        toggle.click();
-        const menu = document.querySelector("[aria-label='Quick actions']");
-        await wait(() => menu.getBoundingClientRect().height > 0);
-        const action = document.querySelector("[aria-label='Add game']");
-        const vote = document.querySelector("[aria-label='Vote']");
-        const rect = e => {const r = e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
-        const m = rect(menu), a = rect(action), v = rect(vote);
+        ${helpers}
+        await closeMenu();
+        go("[data-screen='voting']");
+        go("[data-status='open']");
+        await wait(() => $("[data-contextual-badge]"));
+        await open();
+        const menu = $("[aria-label='Quick actions']");
+        const labels = ["Add game", "Settings", "Personal stats"];
+        const actions = [...labels.map(l => $("[aria-label='" + l + "']")), contextual()];
+        const rect = e => {const r = e.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height,width:r.width};};
         const overlap = (x, y) => x.left < y.right && x.right > y.left && x.top < y.bottom && x.bottom > y.top;
-        if (m.height < 44 || a.top < 0 || a.bottom > innerHeight || overlap(m,v)) throw Error("Menu geometry invalid");
-        if (document.elementFromPoint(a.left + a.height/2, a.top + a.height/2)?.closest("button") !== action) throw Error("Action is covered");
-        if (document.elementFromPoint(v.left + v.height/2, v.top + v.height/2)?.closest("button") !== vote) throw Error("Vote is covered");
-        const profile = document.querySelector("[aria-label='Personal stats']");
+        const nav = rect($("[data-fixture-nav]"));
+        const m = rect(menu), c = rect(toggle());
+        if (m.height < 44 || overlap(m, c) || overlap(m, nav)) throw Error("Menu geometry invalid " + JSON.stringify({m, c, nav}));
+        if (overlap(c, nav)) throw Error("Trigger overlaps navigation");
+        const results = [];
+        for (const action of actions) {
+          action.scrollIntoView({block:"nearest"});
+          const r = rect(action);
+          if (r.width < 44 || r.height < 44) throw Error("Touch target too small");
+          if (r.top < m.top - 0.5 || r.bottom > m.bottom + 0.5 || r.bottom > nav.top) throw Error("Action outside visible menu");
+          if (document.elementFromPoint(r.left + r.width/2, r.top + r.height/2)?.closest("button") !== action) throw Error("Action is covered: " + action.getAttribute("aria-label"));
+          results.push(action.getAttribute("aria-label"));
+        }
+        const profile = $("[aria-label='Personal stats']");
         profile.scrollIntoView({block:"nearest"});
         profile.click();
-        await wait(() => document.querySelector("[role='status']").textContent.includes("Profile"));
-        vote.click();
-        await wait(() => !document.querySelector("[role='status']").textContent.includes("Votes: 0"));
-        return {height: m.height, menu:m, vote:v};
+        await wait(() => $("[role='status']").textContent.includes("Profile"));
+        await open();
+        contextual().scrollIntoView({block:"nearest"});
+        tile("Catan")?.click();
+        return {height: m.height, results};
       })()`);
       assert.ok(result.height >= 44, `menu remains usable at ${height}px`);
+      assert.equal(result.results.length, 4);
     }
   } finally {
     socket?.close();

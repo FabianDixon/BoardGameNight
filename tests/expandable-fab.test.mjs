@@ -17,7 +17,7 @@ const profileSource = readFileSync(new URL("../src/components/ProfileCard.jsx", 
 const analyticsSource = readFileSync(new URL("../src/components/UserAnalyticsPanel.jsx", import.meta.url), "utf8");
 const tokenSource = readFileSync(new URL("../src/components/TokenCountersTool.jsx", import.meta.url), "utf8");
 
-function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {}) {
+function setup({ callbacks = {}, modalCount = 0, currentDestination = null, contextualAction = null } = {}) {
   const state = [];
   const refs = [];
   const effects = [];
@@ -61,6 +61,7 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
         },
       ];
     },
+    useCallback: (fn) => fn,
     useRef(initialValue) {
       const index = refIndex++;
       if (!(index in refs)) refs[index] = { current: initialValue };
@@ -97,6 +98,7 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
     exports: moduleObject.exports,
     require(specifier) {
       if (specifier === "react") return react;
+      if (specifier === "./QuickActionIcon") return { default: () => null };
       if (specifier === "react-dom") return { createPortal: (content) => content };
       if (specifier === "jsx-runtime/jsx-runtime") return jsxRuntime;
       throw new Error(`Unexpected import: ${specifier}`);
@@ -124,7 +126,11 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
         return target === this || descendants(this).some((child) => child === target);
       },
       querySelector(selector) {
-        return selector === "button" ? descendants(this).find((child) => child.element.type === "button") : null;
+        const enabledOnly = selector === 'button:not([aria-disabled="true"])';
+        if (selector !== "button" && !enabledOnly) return null;
+        return descendants(this).find((child) =>
+          child.element.type === "button" && !(enabledOnly && child.element.props["aria-disabled"] === "true")
+        );
       },
     };
     node.element = element;
@@ -136,19 +142,16 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
 
   function descendants(root) {
     const result = [];
-    function visit(node) {
-      const children = node.element.props?.children;
-      for (const child of Array.isArray(children) ? children : children ? [children] : []) {
-        if (!child || typeof child !== "object") continue;
-        if (Array.isArray(child)) {
-          child.forEach((nested) => nested && typeof nested === "object" && visit({ element: nested }));
-        } else {
+    function visit(children) {
+      for (const child of Array.isArray(children) ? children : [children]) {
+        if (Array.isArray(child)) visit(child);
+        else if (child && typeof child === "object") {
           result.push(child.node);
-          visit(child.node);
+          visit(child.props?.children);
         }
       }
     }
-    visit(root);
+    visit(root.element.props?.children);
     return result;
   }
 
@@ -161,6 +164,7 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
       onSettings: callbacks.onSettings || (() => {}),
       onProfile: callbacks.onProfile || (() => {}),
       currentDestination,
+      contextualAction,
     });
     hydrate(tree);
     for (const entry of effects) {
@@ -209,6 +213,10 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
         ["Add game", "Settings", "Personal stats"].includes(element.props["aria-label"])
       );
     },
+    contextual() {
+      return findAll(tree, (element) => element.props?.["data-contextual-quick-action"])[0];
+    },
+    setContextualAction(next) { contextualAction = next; },
   };
 }
 
@@ -265,7 +273,8 @@ test("quick actions start collapsed and focus the first action when expanded", (
   assert.equal(h.trigger().props.type, "button");
   assert.equal(h.trigger().props["aria-expanded"], false);
   assert.equal(h.trigger().props.children[0].props.children, "^");
-  assert.match(h.trigger().props.className, /\bh-12 w-12\b/);
+  assert.match(h.trigger().props.children[0].props.className, /\binline-block translate-y-\[3px\]/);
+  assert.match(h.trigger().props.className, /\bh-11 w-11\b/);
 
   h.trigger().props.onClick();
   h.render();
@@ -275,7 +284,7 @@ test("quick actions start collapsed and focus the first action when expanded", (
   for (const action of h.actions()) {
     assert.equal(action.props.title, action.props["aria-label"]);
     assert.equal(action.props.children.props["aria-hidden"], "true");
-    assert.match(action.props.className, /\bh-12 w-12\b/);
+    assert.match(action.props.className, /\bh-11 w-11\b/);
   }
   assert.equal(h.document.activeElement, h.actions()[0].node);
 });
@@ -368,8 +377,8 @@ test("current account destination is indicated on the FAB and its matching actio
     const h = setup({ currentDestination: destination });
     h.render();
     assert.match(h.trigger().props["aria-label"], new RegExp(`current page: ${label}`));
-    assert.equal(h.trigger().props.children[1].props.children, icon);
-    assert.match(h.trigger().props.children[1].props.className, /md:hidden/);
+    assert.equal(h.trigger().props.children[2].props.children, icon);
+    assert.match(h.trigger().props.children[2].props.className, /md:hidden/);
     h.trigger().props.onClick();
     h.render();
     assert.equal(h.actions().find((action) => action.props["aria-label"] === label).props["aria-current"], "page");
@@ -382,8 +391,8 @@ test("FAB positioning uses responsive CSS that changes at the navigation breakpo
   h.render();
   const { className, style } = h.container().element.props;
   const menuClass = h.findAll(h.container().element, (element) => element.props?.role === "group")[0].props.className;
-  assert.match(className, /\bbottom-44\b/);
-  assert.match(className, /\bmd:bottom-28\b/);
+  assert.match(className, /\bbottom-24\b/);
+  assert.match(className, /\bmd:bottom-6\b/);
   assert.match(menuClass, /\babsolute bottom-full\b/);
   assert.match(menuClass, /\boverflow-y-auto\b/);
   assert.equal(style, undefined);
@@ -399,13 +408,11 @@ test("FAB positioning uses responsive CSS that changes at the navigation breakpo
     const bottom = rule.nodes.find((node) => node.prop === "bottom")?.value;
     if (bottom) bottomOffsets[rule.selector] = bottom;
   });
-  assert.equal(bottomOffsets[".bottom-44"], "11rem");
-  assert.equal(bottomOffsets[".md\\:bottom-28"], "7rem");
   assert.equal(bottomOffsets[".bottom-24"], "6rem");
   assert.equal(bottomOffsets[".md\\:bottom-6"], "1.5rem");
 });
 
-test("short landscape viewports retain a scrollable action above the voting FAB", async () => {
+test("short landscape viewports keep every action reachable without overlapping navigation", async () => {
   const h = setup();
   h.render();
   h.trigger().props.onClick();
@@ -429,8 +436,8 @@ test("short landscape viewports retain a scrollable action above the voting FAB"
       heights.set(media ? "desktop" : "mobile", height);
     }
   });
-  assert.equal(heights.get("mobile").replaceAll(" ", ""), "max(0px,calc(100dvh-16.25rem))");
-  assert.equal(heights.get("desktop").replaceAll(" ", ""), "max(0px,calc(100dvh-12.25rem))");
+  assert.equal(heights.get("mobile").replaceAll(" ", ""), "max(0px,calc(100dvh-10.5rem))");
+  assert.equal(heights.get("desktop").replaceAll(" ", ""), "max(0px,calc(100dvh-6rem))");
   assert.equal(shortRules.get("position"), "fixed");
   assert.equal(shortRules.get("left"), "1rem");
   assert.equal(shortRules.get("top"), "1rem");
@@ -438,15 +445,15 @@ test("short landscape viewports retain a scrollable action above the voting FAB"
   assert.equal(shortRules.get("bottom"), "auto");
   assert.equal(shortRules.get("max-height").replaceAll(" ", ""), "max(0px,calc(100dvh-5rem))");
 
-  for (const [offset, toggleBottom, votingBottom] of [[260, 176, 96], [196, 112, 24]]) {
+  // offset = trigger bottom + 44px trigger + 12px gap + 16px top margin
+  for (const [offset, toggleBottom] of [[168, 96], [96, 24]]) {
     for (const viewportHeight of [320, 304]) {
       const menuHeight = Math.max(0, viewportHeight - offset);
       assert.ok(menuHeight >= 44, `action fits at ${viewportHeight}px`);
-      assert.equal(viewportHeight - toggleBottom - 56 - 12 - menuHeight, 16);
-      assert.ok(toggleBottom > votingBottom + 44);
+      assert.equal(viewportHeight - toggleBottom - 44 - 12 - menuHeight, 16);
     }
-    assert.ok(240 - 80 >= 44);
   }
+  assert.ok(240 - 80 >= 44);
 });
 
 test("voting phase controls coexist below the quick actions and retain their callbacks", () => {
@@ -486,7 +493,109 @@ test("voting phase controls coexist below the quick actions and retain their cal
   assert.equal(disabled.props.disabled, true);
   assert.equal(disabled.props.onClick, undefined);
 
-  assert.match(votingSource, /show=\{activeVote\?\.status === VOTE_STATUS\.COLLECTING\}[\s\S]*?disabled=\{submitDisabled\}[\s\S]*?onClick=\{handleSubmit\}/);
-  assert.match(votingSource, /show=\{activeVote\?\.status === VOTE_STATUS\.OPEN\}[\s\S]*?disabled=\{voteDisabled\}[\s\S]*?onClick=\{handleVote\}/);
+  assert.doesNotMatch(votingSource, /<Fab\b/);
+  assert.doesNotMatch(votingSource, /ui\/Fab"/);
   assert.match(appSource, /onAddGame=\{\(\) => setIsAddGameOpen\(true\)\}/);
+});
+
+test("contextual action is wired once, from the mounted panel, with its original guards", () => {
+  assert.match(appSource, /import ExpandableFab from "\.\/components\/ui\/ConnectedExpandableFab"/);
+  assert.match(votingSource, /const isCollecting = activeVote\?\.status === VOTE_STATUS\.COLLECTING/);
+  assert.match(votingSource, /const isVoting = activeVote\?\.status === VOTE_STATUS\.OPEN/);
+  assert.match(votingSource, /quickActionDisabled = isCollecting \? submitDisabled : voteDisabled/);
+  assert.match(votingSource, /isCollecting \? handleSubmit : handleVote/);
+  assert.match(votingSource, /if \(submitDisabled\) return;/);
+  assert.match(votingSource, /if \(voteDisabled\) return;/);
+  assert.match(votingSource, /useEffect\(\(\) => \(\) => clearContextualQuickAction\(quickActionOwner\)/);
+  assert.match(votingSource, /open <span className="font-semibold">Quick actions<\/span>/);
+  assert.doesNotMatch(votingSource, /press <span/);
+  assert.match(votingSource, /No Submission/);
+  assert.match(votingSource, /props\.currentGroupId \|\| "no-group"/);
+  assert.equal((votingSource.match(/\{quickActionStatus\}/g) || []).length, 2);
+  assert.match(votingSource, /data-quick-action-status/);
+  assert.match(readFileSync(new URL("../src/components/GroupDetail.jsx", import.meta.url), "utf8"), /groupTab === GROUP_TAB\.VOTING && votingNode/);
+});
+
+test("enabled contextual action renders as an icon, runs its callback and closes the menu", () => {
+  let calls = 0;
+  const h = setup({ contextualAction: { kind: "vote", label: "Vote", disabled: false, reason: "", onClick: () => calls++ } });
+  h.render();
+  assert.match(h.trigger().props["aria-label"], /Vote available in menu/);
+  assert.equal(h.trigger().props.children[1].props["data-contextual-badge"], true);
+  h.trigger().props.onClick();
+  h.render();
+  const action = h.contextual();
+  assert.equal(action.props["aria-label"], "Vote");
+  assert.equal(action.props["aria-disabled"], undefined);
+  assert.match(action.props.className, /\bh-11 w-11\b/);
+  assert.equal(h.document.activeElement, h.actions()[0].node);
+  action.props.onClick();
+  h.render();
+  assert.equal(calls, 1);
+  assert.equal(h.trigger().props["aria-expanded"], false);
+});
+
+test("disabled contextual action exposes its reason, is inert and never takes initial focus", () => {
+  let calls = 0;
+  const h = setup({ contextualAction: { kind: "submit", label: "Submit", disabled: true, reason: "Select a game first", onClick: () => calls++ } });
+  h.render();
+  assert.match(h.trigger().props["aria-label"], /Submit, unavailable: Select a game first/);
+  h.trigger().props.onClick();
+  h.render();
+  const action = h.contextual();
+  assert.equal(action.props["aria-disabled"], "true");
+  assert.equal(action.props["aria-label"], "Submit, unavailable: Select a game first");
+  assert.notEqual(h.document.activeElement, action.node);
+  assert.equal(h.document.activeElement, h.actions()[0].node);
+  action.props.onClick();
+  h.render();
+  assert.equal(calls, 0);
+  assert.equal(h.trigger().props["aria-expanded"], true);
+});
+
+test("contextual action disappears from the FAB when the screen unregisters it", () => {
+  const h = setup({ contextualAction: { kind: "vote", label: "Vote", disabled: false, onClick() {} } });
+  h.render();
+  h.setContextualAction(null);
+  h.render();
+  assert.equal(h.contextual(), undefined);
+  assert.doesNotMatch(h.trigger().props["aria-label"], /Vote/);
+});
+
+test("contextual registry only lets the current owner clear or replace its action", () => {
+  const code = transformSync(readFileSync(new URL("../src/components/ui/contextualQuickAction.js", import.meta.url), "utf8"), {
+    format: "cjs",
+  }).code;
+  const moduleObject = { exports: {} };
+  const captured = [];
+  vm.runInNewContext(code, {
+    module: moduleObject,
+    exports: moduleObject.exports,
+    require: (specifier) => {
+      assert.equal(specifier, "react");
+      return { useSyncExternalStore: (subscribe, get) => { captured.push(subscribe, get); return get(); } };
+    },
+  });
+  const { setContextualQuickAction, clearContextualQuickAction, useContextualQuickAction } = moduleObject.exports;
+  assert.equal(useContextualQuickAction(), null);
+  const [subscribe, get] = captured;
+  let notified = 0;
+  const unsubscribe = subscribe(() => notified++);
+
+  const first = { kind: "vote", label: "Vote", disabled: false, reason: "", onClick() {} };
+  setContextualQuickAction("a", first);
+  setContextualQuickAction("a", first);
+  assert.equal(notified, 1, "identical publishes do not re-render");
+  clearContextualQuickAction("stale");
+  assert.equal(get().owner, "a");
+
+  setContextualQuickAction("b", { ...first, kind: "submit", label: "Submit" });
+  clearContextualQuickAction("a");
+  assert.equal(get().owner, "b", "old owner cannot clear the replacement");
+  clearContextualQuickAction("b");
+  assert.equal(get(), null);
+  unsubscribe();
+  setContextualQuickAction("c", first);
+  assert.equal(notified, 3);
+  clearContextualQuickAction("c");
 });

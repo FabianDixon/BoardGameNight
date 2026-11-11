@@ -1,7 +1,11 @@
 // src/components/VotingPanel.jsx
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import GameImage from "./GameImage";
-import Fab from "./ui/Fab";
+import QuickActionIcon from "./ui/QuickActionIcon";
+import {
+  clearContextualQuickAction,
+  setContextualQuickAction,
+} from "./ui/contextualQuickAction";
 import { VOTE_STATUS } from "../constants/workflow";
 import { getHiddenTagSet, isGameHiddenByTags } from "../utils/hiddenTags";
 import {
@@ -660,6 +664,65 @@ function VotingPanelInner({
     setSelectedVoteId(null);
   }
 
+  const quickActionOwner = useId();
+  const quickActionHandlerRef = useRef(null);
+  const isCollecting = activeVote?.status === VOTE_STATUS.COLLECTING;
+  const isVoting = activeVote?.status === VOTE_STATUS.OPEN;
+  const quickActionKind = isCollecting ? "submit" : isVoting ? "vote" : null;
+  const quickActionLabel = isCollecting
+    ? hasSubmitted ? "Change Submission" : "Submit"
+    : alreadyVoted ? "Voted" : "Vote";
+  const quickActionDisabled = isCollecting ? submitDisabled : voteDisabled;
+  let quickActionReason = "";
+  if (quickActionDisabled) {
+    if (isCollecting) quickActionReason = canSubmit ? "Select a game first" : "Submissions are unavailable";
+    else if (alreadyVoted) quickActionReason = "Your vote is recorded";
+    else if (!canVote) quickActionReason = "Voting is unavailable";
+    else if (!effectiveSelectedVoteId) quickActionReason = "Select a game first";
+    else quickActionReason = "You can't vote for your own submission";
+  }
+
+  const quickActionStatus = quickActionKind ? (
+    <div
+      data-quick-action-status={quickActionKind}
+      aria-live="polite"
+      className="flex items-start gap-2 rounded-xl border border-neutral-700 bg-neutral-900 p-3 text-sm text-gray-200"
+    >
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-neutral-700">
+        <QuickActionIcon kind={quickActionKind} label={quickActionLabel} disabled={quickActionDisabled} />
+      </span>
+      <span>
+        <span className="font-semibold">{quickActionLabel}</span>{" "}
+        {quickActionDisabled
+          ? alreadyVoted && quickActionKind === "vote"
+            ? `— ${quickActionReason.toLowerCase()}.`
+            : `— unavailable: ${quickActionReason}.`
+          : `— ready. Open Quick actions and choose the ${quickActionKind === "vote" ? "green check" : quickActionLabel === "Change Submission" ? "pencil" : "paper plane"} icon.`}
+      </span>
+    </div>
+  ) : null;
+
+  // Always call the latest closure so selection changes never invoke a stale handler.
+  useEffect(() => {
+    quickActionHandlerRef.current = isCollecting ? handleSubmit : handleVote;
+  });
+
+  useEffect(() => {
+    if (!quickActionKind) {
+      clearContextualQuickAction(quickActionOwner);
+      return;
+    }
+    setContextualQuickAction(quickActionOwner, {
+      kind: quickActionKind,
+      label: quickActionLabel,
+      disabled: quickActionDisabled,
+      reason: quickActionReason,
+      onClick: () => quickActionHandlerRef.current?.(),
+    });
+  }, [quickActionOwner, quickActionKind, quickActionLabel, quickActionDisabled, quickActionReason]);
+
+  useEffect(() => () => clearContextualQuickAction(quickActionOwner), [quickActionOwner]);
+
   async function handleSaveSessionPlay() {
     if (!onSaveSessionPlay || status !== VOTE_STATUS.CLOSED) return;
     if (isSavingSessionPlay) return;
@@ -1017,10 +1080,12 @@ function VotingPanelInner({
         <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold text-white">Submit game</h3>
           <p className="text-sm text-gray-300">
-            Select a game and press <span className="font-semibold">Submit</span>, or choose{" "}
-            <span className="font-semibold">No Submission</span> if you don't want to submit a game this round.
+            Select a game, then open <span className="font-semibold">Quick actions</span> (the round <span aria-hidden="true">^</span> button at the bottom right) and choose{" "}
+            <span className="font-semibold">{hasSubmitted ? "Change Submission" : "Submit"}</span>, or use the{" "}
+            <span className="font-semibold">No Submission</span> button below if you don't want to submit a game this round.
             Games with a tag hidden by this group can't be submitted.
           </p>
+          {quickActionStatus}
 
           <button
             type="button"
@@ -1070,8 +1135,9 @@ function VotingPanelInner({
         <div className="bg-neutral-800 rounded-2xl shadow border border-neutral-700 p-4 space-y-3 pb-28">
           <h3 className="text-xl font-semibold text-white">Cast your vote</h3>
           <p className="text-sm text-gray-300">
-            Select a game, then press <span className="font-semibold">Vote</span>. Your vote is secret until revealed.
+            Select a game, then open <span className="font-semibold">Quick actions</span> (the round <span aria-hidden="true">^</span> button at the bottom right) and choose the green <span className="font-semibold">Vote</span> check. Your vote is secret until revealed.
           </p>
+          {quickActionStatus}
 
           <input
             type="text"
@@ -1790,31 +1856,13 @@ function VotingPanelInner({
         </div>
       )}
 
-      <Fab
-        show={activeVote?.status === VOTE_STATUS.COLLECTING}
-        variant="pill"
-        label={hasSubmitted ? "Change Submission" : "Submit"}
-        disabled={submitDisabled}
-        onClick={handleSubmit}
-      >
-        {hasSubmitted ? "Change" : "Submit"}
-      </Fab>
-
-      <Fab
-        show={activeVote?.status === VOTE_STATUS.OPEN}
-        variant="pill"
-        label={alreadyVoted ? "Voted" : "Vote"}
-        disabled={voteDisabled}
-        onClick={handleVote}
-      >
-        Vote
-      </Fab>
     </div>
   );
 }
 
 export default function VotingPanel(props) {
   const phaseKey = [
+    props.currentGroupId || "no-group",
     props.activeVote?.id || "no-vote",
     props.activeVote?.status || "none",
     props.sessionPlayRecord?.updatedAt || "no-play-update",

@@ -121,6 +121,7 @@ Key known files/components in the current project include:
 	•	GameImage.jsx
 	•	UserAnalyticsPanel.jsx
 	•	shared UI helpers such as Card.jsx, Fab.jsx, Toast.jsx
+	ExpandableFab quick actions; VotingPanel publishes its Submit/Change/Vote action into it via ui/contextualQuickAction.js (only while the panel is mounted)
 	•	emailExport.js
 
 Key hooks include:
