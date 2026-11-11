@@ -1,20 +1,15 @@
 // src/App.jsx
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useId, useMemo, useState, useCallback, useRef } from "react";
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
-  endAt,
   getDoc,
   getDocFromServer,
   getDocs,
   increment,
-  limit,
   onSnapshot,
-  orderBy,
-  query,
-  startAt,
   setDoc,
   updateDoc,
   writeBatch,
@@ -27,11 +22,12 @@ import { useMyRatings } from "./hooks/useMyRatings";
 import { useMyCollection } from "./hooks/useMyCollection";
 import { useGames } from "./hooks/useGames";
 import { useGroupMembers } from "./hooks/useGroupMembers";
-import { useGroupSettings } from "./hooks/useGroupSettings";
+import { useGroupSettingsState } from "./hooks/useGroupSettings";
+import { buildVotingCandidates, getHiddenTagSet, isGameHiddenByTags } from "./utils/hiddenTags";
 import { useGroupWeights } from "./hooks/useGroupWeights";
 import { useGroupGames } from "./hooks/useGroupGames";
 import { useGroupVotes } from "./hooks/useGroupVotes";
-import { useGroupPool } from "./hooks/useGroupPool";
+import { useGroupPoolState } from "./hooks/useGroupPool";
 import { useVoteBallots } from "./hooks/useVoteBallots";
 import { useSessionSubmissions } from "./hooks/useSessionSubmissions";
 import { useMySubmission } from "./hooks/useMySubmission";
@@ -57,7 +53,10 @@ import { buildSessionMailto, copyJsonToClipboard } from "./utils/emailExport";
 import GameTagsField from "./components/GameTagsField";
 import GameTagFilter from "./components/GameTagFilter";
 import { normalizeGameTags, getUniqueTagsFromGames } from "./utils/gameTags";
+import { canEditGame } from "./utils/gamePermissions";
 import { VOTE_STATUS, APP_TAB, GROUP_VIEW, GROUP_TAB } from "./constants/workflow";
+import { closeSession, createAutoCloseGuard, createSession, openSession, resolveEffectiveWinnerId, saveSessionOverride } from "./utils/sessionReliability";
+import { createLatestGuard, isPermanentError, readLoad, subscribeWithRetry, watchAccess } from "./utils/loadReliability";
 import {
   DEFAULT_AVATAR_ID,
   avatarById,
@@ -66,8 +65,87 @@ import {
 } from "./constants/avatars";
 
 const auth = getAuth();
+const EMPTY_GROUPS = [];
+const openModals = [];
 
-function Modal({ open, title, onClose, children, dismissible = true }) {
+function Modal({ open, title, onClose, children, dismissible = true, restoreFocus }) {
+  const titleId = useId();
+  const dialogRef = useRef(null);
+  const closeRef = useRef(onClose);
+  const restoreFocusRef = useRef(restoreFocus);
+
+  useEffect(() => {
+    closeRef.current = onClose;
+    restoreFocusRef.current = restoreFocus;
+  }, [onClose, restoreFocus]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const dialog = dialogRef.current;
+    const previousFocus = document.activeElement;
+    openModals.push(dialog);
+    const isTopModal = () => openModals[openModals.length - 1] === dialog;
+    const focusable = () =>
+      [...dialog.querySelectorAll(
+        'a[href], area[href], button, input, select, textarea, iframe, [contenteditable="true"], [tabindex]'
+      )].filter((element) =>
+        element.tabIndex >= 0 &&
+        !element.matches(":disabled") &&
+        !element.closest("[inert], [hidden]") &&
+        element.getClientRects().length > 0
+      ).sort((a, b) => {
+        const aIndex = a.tabIndex || Infinity;
+        const bIndex = b.tabIndex || Infinity;
+        return aIndex - bIndex;
+      });
+    const focusFirst = () => (focusable()[0] || dialog).focus();
+
+    function handleKeyDown(event) {
+      if (!isTopModal()) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (dismissible) closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (!first) {
+        event.preventDefault();
+        dialog.focus();
+      } else if (event.shiftKey && (document.activeElement === first || !elements.includes(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !elements.includes(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    function handleFocusIn(event) {
+      if (isTopModal() && !dialog.contains(event.target)) focusFirst();
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", handleFocusIn);
+    focusFirst();
+    return () => {
+      const wasTopModal = isTopModal();
+      openModals.splice(openModals.indexOf(dialog), 1);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      if (!wasTopModal) return;
+      const target = previousFocus?.isConnected && previousFocus !== document.body
+        ? previousFocus
+        : restoreFocusRef.current?.();
+      const nextModal = openModals[openModals.length - 1];
+      if (nextModal && !nextModal.contains(target)) nextModal.focus();
+      else target?.focus();
+    };
+  }, [open, dismissible]);
+
   if (!open) return null;
 
   return (
@@ -75,20 +153,20 @@ function Modal({ open, title, onClose, children, dismissible = true }) {
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      ref={dialogRef}
     >
       {/* Only allow backdrop click if dismissible */}
       <div
         className="ui-modal-backdrop"
         onClick={dismissible ? onClose : undefined}
         aria-hidden="true"
-        style={{
-          pointerEvents: dismissible ? "auto" : "none",
-        }}
       />
 
       <div className="ui-modal-shell">
         <div className="ui-modal-header">
-          <h2 className="text-lg font-semibold text-white">{title}</h2>
+          <h2 id={titleId} className="text-lg font-semibold text-white">{title}</h2>
 
           {dismissible && (
             <button
@@ -214,24 +292,6 @@ function normalizeSessionMetrics(metrics) {
   return normalized;
 }
 
-/**
- * Derive the effective winner from a play record.
- * Prefers the explicit isWinner flag in overrideResults (when an override exists)
- * over the raw top-level winnerGameId field, so all downstream consumers
- * are consistent after a vote-result override is saved.
- */
-function resolveEffectiveWinnerId(play) {
-  if (Array.isArray(play?.overrideResults) && play.overrideResults.length > 0) {
-    const overrideWinner = play.overrideResults.find(
-      (r) => r.isWinner === true && String(r.gameId || "").trim()
-    );
-    if (overrideWinner) return String(overrideWinner.gameId).trim();
-  }
-  return typeof play?.winnerGameId === "string" && play.winnerGameId.trim()
-    ? play.winnerGameId.trim()
-    : null;
-}
-
 export default function App() {
   const [user, setUser] = useState(null);
   const { isAdmin } = useIsAdmin(user?.uid);
@@ -241,30 +301,41 @@ export default function App() {
   const [showAuthPrompt, setShowAuthPrompt] = useState(false);
   const [savedAccountRequiredOpen, setSavedAccountRequiredOpen] = useState(false);
 
-  const games = useGames(user);
+  const { games, ready: gamesReady, error: gamesError, retry: retryGames } = useGames(user);
   const [selectedGame, setSelectedGame] = useState(null);
 
-  const myCollection = useMyCollection(user);
+  const { myCollection, ready: myCollectionReady, error: myCollectionError, retry: retryMyCollection } = useMyCollection(user);
 
   const [activeTab, setActiveTab] = useState(APP_TAB.LIBRARY); // library | collection | group | profile
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTagFilters, setSelectedTagFilters] = useState([]);
 
-  const [myGroups, setMyGroups] = useState([]);
+  const [myGroupsState, setMyGroupsState] = useState(null);
   const [currentGroupId, setCurrentGroupId] = useState("");
-  const [groupAccessReady, setGroupAccessReady] = useState(false);
+  const [groupAccessState, setGroupAccessState] = useState(null);
+  const groupAccessWatcherRef = useRef(null);
+  const myGroupsRetryRef = useRef(null);
+  const accessKey = user?.uid && currentGroupId ? `${user.uid}:${currentGroupId}` : null;
+  const groupAccessReady = !!accessKey && groupAccessState?.key === accessKey && groupAccessState.status === "ready";
+  const groupAccessError = accessKey && groupAccessState?.key === accessKey && groupAccessState.status === "error"
+    ? groupAccessState.error
+    : null;
+  const myGroupsLoad = readLoad(myGroupsState, user?.uid || null, EMPTY_GROUPS);
+  const myGroups = myGroupsLoad.data;
+  const myGroupsReady = myGroupsLoad.ready;
+  const myGroupsError = myGroupsLoad.error;
 
-  const members = useGroupMembers(user, currentGroupId, groupAccessReady);
+  const { members, ready: membersReady, error: membersError, retry: retryMembers } = useGroupMembers(user, currentGroupId, groupAccessReady);
   const [memberProfilesById, setMemberProfilesById] = useState({});
   const [directoryProfilesById, setDirectoryProfilesById] = useState({});
 
   const [groupView, setGroupView] = useState(GROUP_VIEW.PICKER); // "picker" | "detail"
   const [groupTab, setGroupTab] = useState(GROUP_TAB.COLLECTION);
 
-  const groupGameRefs = useGroupGames(currentGroupId, groupAccessReady);
+  const { groupGameRefs, ready: groupGameRefsReady, error: groupGameRefsError, retry: retryGroupGames } = useGroupGames(currentGroupId, groupAccessReady);
   const groupWeightOverrides = useGroupWeights(currentGroupId, groupAccessReady);
-  const groupSettings = useGroupSettings(user, currentGroupId, groupAccessReady);
+  const { settings: groupSettings, ready: groupSettingsReady, error: groupSettingsError, retry: retryGroupSettings } = useGroupSettingsState(user, currentGroupId, groupAccessReady);
 
   const votes = useGroupVotes(currentGroupId, groupAccessReady);
 
@@ -287,7 +358,7 @@ export default function App() {
   const [editingPastPlay, setEditingPastPlay] = useState(null);
   const [isSavingPastPlay, setIsSavingPastPlay] = useState(false);
 
-  const poolDocs = useGroupPool(currentGroupId, groupAccessReady);
+  const { poolDocs, ready: poolReady, error: poolError, retry: retryPool } = useGroupPoolState(currentGroupId, groupAccessReady);
   const mySubmissionGameId = useMySubmission(user?.uid, currentGroupId, activeVote?.id, groupAccessReady);
   const sessionSubmissions = useSessionSubmissions(currentGroupId, activeVote?.id, activeVote?.status, groupAccessReady);
 
@@ -418,25 +489,57 @@ export default function App() {
   }, []);
 
   // --- My groups + group docs ---
+  const uid = user?.uid;
   useEffect(() => {
-    if (!user) return;
+    if (!uid) return;
 
-    const ref = collection(db, "users", user.uid, "groups");
-    const unsub = onSnapshot(ref, async (snap) => {
+    const latest = createLatestGuard();
+    let retryTimer = null;
+    let lastSnap = null;
+    let loadFailed = false;
+
+    async function load(snap) {
+      const isCurrent = latest.begin();
+      if (retryTimer != null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
       const ids = snap.docs.map((d) => d.id);
 
-      const groupDocsRaw = await Promise.all(
+      const results = await Promise.allSettled(
         ids.map(async (id) => {
           const gSnap = await getDoc(doc(db, "groups", id));
           if (!gSnap.exists()) return null;
           return { id, ...gSnap.data() };
         })
       );
+      if (!isCurrent()) return;
 
-      const groupDocs = groupDocsRaw.filter(Boolean);
+      const failed = results.find((r) => r.status === "rejected");
+      if (failed) {
+        console.error("Failed to load groups:", failed.reason);
+        setMyGroupsState((prev) => ({
+          key: uid,
+          data: prev?.key === uid ? prev.data : null,
+          loaded: prev?.key === uid && prev.loaded,
+          error: failed.reason,
+        }));
+        loadFailed = true;
+        if (!isPermanentError(failed.reason)) {
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            if (lastSnap) load(lastSnap);
+          }, 5000);
+        }
+        return;
+      }
+
+      loadFailed = false;
+
+      const groupDocs = results.map((r) => r.value).filter(Boolean);
       const validIds = groupDocs.map((group) => group.id);
 
-      setMyGroups(groupDocs);
+      setMyGroupsState({ key: uid, data: groupDocs, loaded: true, error: null });
 
       setCurrentGroupId((prev) => {
         if (!prev && validIds.length > 0) return validIds[0];
@@ -444,10 +547,55 @@ export default function App() {
         if (validIds.length === 0) return "";
         return prev;
       });
-    });
+    }
 
-    return unsub;
-  }, [user]);
+    const groupsRef = collection(db, "users", uid, "groups");
+    const unsub = subscribeWithRetry(
+      (onNext, onErr) => onSnapshot(groupsRef, onNext, onErr),
+      {
+        onNext: (snap) => {
+          lastSnap = snap;
+          load(snap);
+        },
+        onError: (error) => {
+          console.error("My groups listener error:", error);
+          latest.invalidate();
+          if (retryTimer != null) clearTimeout(retryTimer);
+          retryTimer = null;
+          lastSnap = null;
+          loadFailed = false;
+          setMyGroupsState((prev) => ({
+            key: uid,
+            data: prev?.key === uid ? prev.data : null,
+            loaded: prev?.key === uid && prev.loaded,
+            error,
+          }));
+        },
+      }
+    );
+
+    const retry = () => {
+      if (loadFailed && lastSnap) {
+        if (retryTimer != null) clearTimeout(retryTimer);
+        retryTimer = null;
+        load(lastSnap);
+      } else {
+        unsub.retry();
+      }
+    };
+    myGroupsRetryRef.current = retry;
+
+    return () => {
+      latest.invalidate();
+      if (retryTimer != null) clearTimeout(retryTimer);
+      retryTimer = null;
+      lastSnap = null;
+      unsub();
+      if (myGroupsRetryRef.current === retry) myGroupsRetryRef.current = null;
+      setMyGroupsState(null);
+      setCurrentGroupId("");
+    };
+  }, [uid]);
 
   const syncMyNicknameToGroupMemberships = useCallback(
     async (nextNickname) => {
@@ -572,39 +720,40 @@ export default function App() {
 
   // Gate group-dependent reads: wait for membership doc to be visible server-side
   // This prevents permission-denied errors from hooks that subscribe to group data
-  // before the membership document is fully propagated.
+  // before the membership document is fully propagated. Failures are retried with
+  // backoff (and manually via retryGroupAccess) and exposed as groupAccessError.
   useEffect(() => {
-    let cancelled = false;
+    if (!user?.uid || !currentGroupId) return;
 
-    async function checkAccess() {
-      if (!user?.uid || !currentGroupId) {
-        setGroupAccessReady(false);
-        return;
-      }
+    const key = `${user.uid}:${currentGroupId}`;
+    const memberRef = doc(db, "groups", currentGroupId, "members", user.uid);
+    const watcher = watchAccess({
+      check: () => waitForServerDoc(memberRef, { timeoutMs: 4000, intervalMs: 200 }),
+      onChecking: () => setGroupAccessState({ key, status: "checking", error: null }),
+      onReady: () => setGroupAccessState({ key, status: "ready", error: null }),
+      onError: (error) => {
+        console.warn("groupAccessReady: membership not confirmed", error);
+        setGroupAccessState({ key, status: "error", error });
+      },
+    });
+    groupAccessWatcherRef.current = watcher;
 
-      // Optimization: avoid unnecessary reset if we're already checking this group
-      // (reduces downstream hook churn when switching between valid groups)
-      setGroupAccessReady(false);
-
-      try {
-        const memberRef = doc(db, "groups", currentGroupId, "members", user.uid);
-        await waitForServerDoc(memberRef, { timeoutMs: 4000, intervalMs: 200 });
-
-        if (!cancelled) setGroupAccessReady(true);
-      } catch (e) {
-        console.warn("groupAccessReady: membership not visible yet", e);
-        if (!cancelled) setGroupAccessReady(false);
-      }
-    }
-
-    checkAccess();
     return () => {
-      cancelled = true;
+      watcher.cancel();
+      if (groupAccessWatcherRef.current === watcher) groupAccessWatcherRef.current = null;
     };
   }, [user?.uid, currentGroupId]);
 
+  const retryGroupAccess = useCallback(() => {
+    groupAccessWatcherRef.current?.retryNow();
+  }, []);
+
   const autoStartRef = useRef({ voteId: null });
-  const autoCloseRef = useRef({ voteId: null });
+  const [autoCloseRetry, setAutoCloseRetry] = useState(0);
+  const autoCloseGuard = useMemo(
+    () => createAutoCloseGuard(() => setAutoCloseRetry((value) => value + 1)),
+    []
+  );
 
   // --- Derived views ---
   const selectedGameFresh = useMemo(() => {
@@ -626,24 +775,24 @@ export default function App() {
   }
 
   // Helper: check if a game matches ALL selected tags (ALL-match semantics)
-  function matchesAnyTag(game) {
+  const matchesAnyTag = useCallback((game) => {
     if (selectedTagFilters.length === 0) return true;
     const tags = normalizeGameTags(game.tags);
     return selectedTagFilters.every((selectedTag) => tags.includes(selectedTag));
-  }
+  }, [selectedTagFilters]);
 
   const libraryGames = useMemo(() => {
     return games.filter((g) =>
       matchesSearchQuery(g, normalizedQuery) && matchesAnyTag(g)
     );
-  }, [games, normalizedQuery, selectedTagFilters]);
+  }, [games, normalizedQuery, matchesAnyTag]);
 
   const collectionGames = useMemo(() => {
     const base = games.filter((g) => myCollection.has(g.id));
     return base.filter((g) =>
       matchesSearchQuery(g, normalizedQuery) && matchesAnyTag(g)
     );
-  }, [games, myCollection, normalizedQuery, selectedTagFilters]);
+  }, [games, myCollection, normalizedQuery, matchesAnyTag]);
 
   const groupGames = useMemo(() => {
     if (!currentGroupId) return [];
@@ -675,6 +824,21 @@ export default function App() {
       })
       .filter(Boolean);
   }, [currentGroupId, games, groupGameRefs, poolDocs]);
+
+  const groupCollectionReady = groupAccessReady && groupGameRefsReady && gamesReady;
+  const groupLoadError =
+    groupAccessError || groupGameRefsError || gamesError || poolError || groupSettingsError || membersError || null;
+  const groupLoadPermanent = !!groupLoadError && isPermanentError(groupLoadError);
+  const retryAllLoads = () => {
+    if (groupAccessError) retryGroupAccess();
+    retryGames();
+    retryMyCollection();
+    retryMembers();
+    retryGroupGames();
+    retryGroupSettings();
+    retryPool();
+    myGroupsRetryRef.current?.();
+  };
 
   const groupAvailableTags = useMemo(() => {
     return getUniqueTagsFromGames(groupGames);
@@ -1184,68 +1348,16 @@ export default function App() {
         typeof winnerGameId === "string" && winnerGameId.trim()
           ? winnerGameId.trim()
           : null;
-      const previousEffectiveWinnerId = resolveEffectiveWinnerId(sessionPlayRecord);
-
-      const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
-
-      const payload = {
-        groupId: currentGroupId,
-        voteId: activeVote.id,
-        overrideResults: normalized,
-        winnerGameId: effectiveWinnerId,
-        createdAt:
-          typeof sessionPlayRecord?.createdAt === "number"
-            ? sessionPlayRecord.createdAt
-            : now,
-        updatedAt: now,
-        createdBy: sessionPlayRecord?.createdBy || user.uid,
-      };
-
       try {
         setIsSavingVoteOverride(true);
-        await setDoc(playRef, payload, { merge: true });
-
-        if (previousEffectiveWinnerId !== effectiveWinnerId) {
-          if (previousEffectiveWinnerId) {
-            const previousWinnerPoolRef = doc(
-              db,
-              "groups",
-              currentGroupId,
-              "pool",
-              previousEffectiveWinnerId
-            );
-            const previousWinnerPoolSnap = await getDoc(previousWinnerPoolRef);
-            if (
-              previousWinnerPoolSnap.exists() &&
-              previousWinnerPoolSnap.data()?.isActive === false
-            ) {
-              await setDoc(
-                previousWinnerPoolRef,
-                {
-                  isActive: true,
-                },
-                { merge: true }
-              );
-            }
-          }
-
-          if (effectiveWinnerId) {
-            const effectiveWinnerPoolRef = doc(
-              db,
-              "groups",
-              currentGroupId,
-              "pool",
-              effectiveWinnerId
-            );
-            await setDoc(
-              effectiveWinnerPoolRef,
-              {
-                isActive: false,
-              },
-              { merge: true }
-            );
-          }
-        }
+        await saveSessionOverride(db, {
+          groupId: currentGroupId,
+          voteId: activeVote.id,
+          userId: user.uid,
+          now,
+          winnerGameId: effectiveWinnerId,
+          overrideResults: normalized,
+        });
 
         showToast("Vote results overridden ✅", "success");
       } catch (e) {
@@ -1255,7 +1367,7 @@ export default function App() {
         setIsSavingVoteOverride(false);
       }
     },
-    [user, currentGroupId, activeVote, canManageSession, sessionPlayRecord, showToast, poolDocs, sessionIndex, effectiveWeights]
+    [user, currentGroupId, activeVote, canManageSession, showToast, poolDocs, sessionIndex, effectiveWeights]
   );
 
   // Save an edit to a past session play record.
@@ -1337,6 +1449,11 @@ export default function App() {
   );
 
   function openEditGame(game) {
+    if (!canEditGame(game, user?.uid, isAdmin)) {
+      showToast("Only the game creator or an administrator can edit this game.", "error");
+      return;
+    }
+
     setEditGameForm({
       id: game.id,
       title: game.title || "",
@@ -1436,7 +1553,7 @@ export default function App() {
         },
       }));
     },
-    [user?.uid]
+    [user?.uid, user?.isAnonymous]
   );
 
   const searchSessionAccounts = useCallback(async (rawQuery) => {
@@ -1773,6 +1890,14 @@ export default function App() {
     e.preventDefault();
     if (!user || !editGameForm.id) return;
 
+    const game = games.find((item) => item.id === editGameForm.id)
+      || (selectedGameFresh?.id === editGameForm.id ? selectedGameFresh : null);
+    if (!canEditGame(game, user?.uid, isAdmin)) {
+      showToast("Only the game creator or an administrator can edit this game.", "error");
+      setIsEditGameOpen(false);
+      return;
+    }
+
     const tags = normalizeGameTags(editGameForm.tags);
 
     try {
@@ -1793,6 +1918,13 @@ export default function App() {
 
   async function deleteGame(gameId) {
     if (!user || !gameId) return;
+
+    const game = games.find((item) => item.id === gameId)
+      || (selectedGameFresh?.id === gameId ? selectedGameFresh : null);
+    if (!canEditGame(game, user?.uid, isAdmin)) {
+      showToast("Only the game creator or an administrator can delete this game.", "error");
+      return;
+    }
 
     const ok = window.confirm(
       "Delete this game? This cannot be undone and will remove it from your groups."
@@ -2149,13 +2281,13 @@ export default function App() {
   }
 
   const closeVote = useCallback(async (opts = {}) => {
-    if (!user || !currentGroupId || !activeVote?.id || !activeVote) return;
+    if (!user || !currentGroupId || !activeVote?.id || !activeVote) return false;
     if (user.isAnonymous) {
       showToast("Saved account required for voting.", "info");
       setSavedAccountRequiredOpen(true);
-      return;
+      return false;
     }
-    if (activeVote.status !== VOTE_STATUS.OPEN) return;
+    if (activeVote.status !== VOTE_STATUS.OPEN) return false;
 
     // ✅ only block manual calls; allow auto calls
     if (!opts.auto && !canCloseActiveVote) {
@@ -2181,32 +2313,17 @@ export default function App() {
       // 2) Build pool map for weighting inputs
       const poolMap = new Map(poolDocs.map((p) => [p.id, p]));
 
-      // 3) Pick winner (only voted games eligible)
-      const winnerResult = pickWeightedWinner({
-        voteCounts,
-        poolMap,
-        now,
-        sessionIndex,
-        weights: effectiveWeights,
-      });
-
-      if (!winnerResult) {
-        throw new Error("WINNER_SELECTION_FAILED");
-      }
-
-      const { winnerGameId, scoreBreakdown, weightsUsed } = winnerResult;
-
       const normalizeScoreRow = (r) => {
-      const votes = Number(r.sessionVotes ?? r.votes ?? r.voteCount ?? 0);
-      const score = Number(
-        r.score ??
-        r.effectiveScore ??
-        r.finalScore ??
-        r.weightedScore ??
-        r.totalScore ??
-        r.points ??
-        0
-      );
+        const votes = Number(r.sessionVotes ?? r.votes ?? r.voteCount ?? 0);
+        const score = Number(
+          r.score ??
+          r.effectiveScore ??
+          r.finalScore ??
+          r.weightedScore ??
+          r.totalScore ??
+          r.points ??
+          0
+        );
 
         return {
           ...r,
@@ -2215,87 +2332,45 @@ export default function App() {
         };
       };
 
-      const normalizedBreakdown = Array.isArray(scoreBreakdown)
-        ? scoreBreakdown.map(normalizeScoreRow)
-        : [];
-
-      const voteRef = doc(db, "groups", currentGroupId, "votes", activeVote.id);
-      const batch = writeBatch(db);
-
-      // Close vote + store debug info
-      batch.update(voteRef, {
-        status: VOTE_STATUS.CLOSED,
-        closedAt: now,
-        winnerGameId,
-        scoreBreakdown: normalizedBreakdown,
-        weightsUsed,
-      });
-
-      // Update pool stats ONLY for games that got votes (>0)
-      for (const { gameId, sessionVotes } of normalizedBreakdown) {
-        const poolRef = doc(db, "groups", currentGroupId, "pool", gameId);
-        batch.set(
-          poolRef,
-          {
-            lastVotedAt: now,
-            cycleVoteCount: increment(sessionVotes),
-            lifetimeVoteCount: increment(sessionVotes),
+      const result = await closeSession(db, currentGroupId, activeVote.id, now, (currentIndex) => {
+        const winnerResult = pickWeightedWinner({
+          voteCounts,
+          poolMap,
+          now,
+          sessionIndex: currentIndex,
+          weights: effectiveWeights,
+        });
+        if (!winnerResult) throw new Error("WINNER_SELECTION_FAILED");
+        const { winnerGameId, scoreBreakdown, weightsUsed } = winnerResult;
+        const normalizedBreakdown = Array.isArray(scoreBreakdown)
+          ? scoreBreakdown.map(normalizeScoreRow)
+          : [];
+        return {
+          winnerGameId,
+          scoreBreakdown: normalizedBreakdown,
+          weightsUsed,
+          playRecord: {
+            groupId: currentGroupId,
+            voteId: activeVote.id,
+            sessionIndex: currentIndex,
+            playedAt: now,
+            winnerGameId: winnerGameId || null,
+            playedGameIds: normalizePlayedGameIds([], winnerGameId),
+            participantIds: normalizeParticipantIds([], groupMemberIds),
+            resultMode: defaultResultMode(winnerGameId),
+            placements: [],
+            createdAt: now,
+            updatedAt: now,
+            createdBy: user.uid,
           },
-          { merge: true }
-        );
-      }
-
-      // Winner leaves pool
-      if (winnerGameId) {
-        const winnerPoolRef = doc(db, "groups", currentGroupId, "pool", winnerGameId);
-
-        batch.set(
-          winnerPoolRef,
-          {
-            isActive: false,
-            lastWonAt: now,              // optional
-            lastWonSession: sessionIndex,
-            playedCount: increment(1),
-            lastPlayedAt: now,           // optional
-          },
-          { merge: true }
-        );
-      }
-
-      // Upsert session history/play record for this vote
-      const playRef = doc(db, "groups", currentGroupId, "plays", activeVote.id);
-      batch.set(
-        playRef,
-        {
-          groupId: currentGroupId,
-          voteId: activeVote.id,
-          sessionIndex,
-          playedAt: now,
-          winnerGameId: winnerGameId || null,
-          playedGameIds: normalizePlayedGameIds([], winnerGameId),
-          participantIds: normalizeParticipantIds([], groupMemberIds),
-          resultMode: defaultResultMode(winnerGameId),
-          placements: [],
-          createdAt: now,
-          updatedAt: now,
-          createdBy: user.uid,
-        },
-        { merge: true }
-      );
-
-      await batch.commit();
-
-      // Clear active session meta so a new session can start
-      await updateDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"), {
-        status: null,
-        activeVoteId: null,
-        sessionIndex: increment(1),
-        updatedAt: now,
+        };
       });
+      if (!result) return false;
+      const { winnerGameId, scoreBreakdown, weightsUsed } = result;
 
       setWinnerModal({
         winnerGameId,
-        scoreBreakdown: normalizedBreakdown,
+        scoreBreakdown,
         weightsUsed,
       });
 
@@ -2305,6 +2380,7 @@ export default function App() {
       );
     } catch (e) {
       console.error("closeVote failed:", e);
+      if (opts.auto) throw e;
       if (!opts.auto) {
         showToast(e.code || e.message || "Failed to close vote.", "error");
       }
@@ -2317,7 +2393,6 @@ export default function App() {
     poolDocs,
     effectiveWeights,
     groupMemberIds,
-    sessionIndex,
     showToast,
   ]);
 
@@ -2335,31 +2410,18 @@ export default function App() {
       return;
     }
 
-    const now = Date.now();
-
-    const voteRef = await addDoc(collection(db, "groups", currentGroupId, "votes"), {
-      status: VOTE_STATUS.COLLECTING,
-      createdAt: now,
-      createdBy: user.uid,
-    });
-
-    // Create or update meta (sessionIndex persists)
-    const metaRef = doc(db, "groups", currentGroupId, "activeSession", "meta");
-    const currentIndex = Number(sessionMeta?.sessionIndex || 0);
-
-    await setDoc(
-      metaRef,
-      {
-        activeVoteId: voteRef.id,
-        ownerId: user.uid,
-        status: VOTE_STATUS.COLLECTING,
-        sessionIndex: currentIndex,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
-
-    showToast("Session started. Collecting submissions…", "success");
+    try {
+      await createSession(db, currentGroupId, user.uid, Date.now());
+      showToast("Session started. Collecting submissions…", "success");
+    } catch (e) {
+      console.error("callSession failed:", e);
+      showToast(
+        e?.message === "SESSION_ALREADY_ACTIVE"
+          ? "A session is already active."
+          : "Session could not be started. Please try again.",
+        e?.message === "SESSION_ALREADY_ACTIVE" ? "info" : "error"
+      );
+    }
   }
 
   async function submitToSession(gameId) {
@@ -2395,6 +2457,8 @@ export default function App() {
     );
 
     const poolRef = doc(db, "groups", currentGroupId, "pool", gid);
+    const gameRef = doc(db, "games", gid);
+    const settingsRef = doc(db, "groups", currentGroupId, "settings", "meta");
 
     const voteRef = doc(db, "groups", currentGroupId, "votes", activeVote.id);
     const metaRef = doc(db, "groups", currentGroupId, "activeSession", "meta");
@@ -2403,12 +2467,19 @@ export default function App() {
 
     try {
       await runTransaction(db, async (tx) => {
-        const [voteSnap, metaSnap, subSnap, poolSnap] = await Promise.all([
+        const [voteSnap, metaSnap, subSnap, poolSnap, gameSnap, settingsSnap] = await Promise.all([
           tx.get(voteRef),
           tx.get(metaRef),
           tx.get(submissionRef),
           tx.get(poolRef),
+          tx.get(gameRef),
+          tx.get(settingsRef),
         ]);
+
+        if (!gameSnap.exists()) throw new Error("GAME_UNAVAILABLE");
+        if (isGameHiddenByTags(gameSnap.data(), getHiddenTagSet(settingsSnap.exists() ? settingsSnap.data() : null))) {
+          throw new Error("HIDDEN_TAG");
+        }
 
         // Must be collecting (server truth)
         const voteStatus = voteSnap.exists() ? voteSnap.data()?.status : null;
@@ -2494,6 +2565,10 @@ export default function App() {
       const msg =
         e?.message === "ALREADY_IN_POOL"
           ? "That game is already active in the pool."
+          : e?.message === "HIDDEN_TAG"
+          ? "That game has a tag hidden by this group and can't be submitted."
+          : e?.message === "GAME_UNAVAILABLE"
+          ? "That game is no longer available."
           : e?.message === "NOT_COLLECTING"
           ? "Submissions are closed."
           : e?.code === "permission-denied"
@@ -2635,27 +2710,44 @@ export default function App() {
       );
 
       const submittedIds = subsSnap.docs.map((d) => d.data().gameId).filter(Boolean);
-      const candidates = Array.from(new Set([...activePoolGameIds, ...submittedIds]));
 
-      if (candidates.length === 0) {
-        if (!silent) showToast("Cannot start voting: no games in pool or submitted.", "error");
-        return;
+      // Settings are read fresh so stale/unloaded hidden tags can't leak a game into the snapshot.
+      let settingsData;
+      try {
+        const settingsSnap = await getDoc(doc(db, "groups", currentGroupId, "settings", "meta"));
+        settingsData = settingsSnap.exists() ? settingsSnap.data() : {};
+      } catch (e) {
+        console.error("startVoting: failed to read group settings", e);
       }
 
-      await updateDoc(doc(db, "groups", currentGroupId, "votes", activeVote.id), {
-        status: VOTE_STATUS.OPEN,
-        openedAt: Date.now(),
-        candidates,
+      const built = buildVotingCandidates({
+        poolActiveIds: activePoolGameIds,
+        submittedIds,
+        eligibleGames: groupGames,
+        hiddenTags: settingsData ? getHiddenTagSet(settingsData) : null,
+        ready: groupCollectionReady && poolReady && !!settingsData,
       });
 
-      await updateDoc(doc(db, "groups", currentGroupId, "activeSession", "meta"), {
-        status: VOTE_STATUS.OPEN,
-        updatedAt: Date.now(),
-      });
+      if (!built.ok) {
+        if (!silent) {
+          showToast(
+            built.reason === "NOT_READY"
+              ? "Game data is still loading. Try again in a moment."
+              : "Cannot start voting: no eligible games in pool or submitted.",
+            "error"
+          );
+        }
+        return false;
+      }
+      const candidates = built.candidates;
+
+      const opened = await openSession(db, currentGroupId, activeVote.id, candidates, Date.now());
+      if (!opened) return false;
 
       if (!silent) showToast("Voting is open 🎲", "success");
+      return true;
     },
-    [user, currentGroupId, activeVote, currentGroup, activePoolGameIds, showToast]
+    [user, currentGroupId, activeVote, currentGroup, activePoolGameIds, groupGames, groupCollectionReady, poolReady, showToast]
   );
 
   // ✅ Auto: collecting -> open when everyone submitted
@@ -2678,7 +2770,9 @@ export default function App() {
     if (submissionsCount >= groupMemberCount) {
       autoStartRef.current.voteId = activeVote.id;
       // call the same function the button calls
-      startVoting({ allowMember: true, silent: true }).catch((e) => {
+      startVoting({ allowMember: true, silent: true }).then((started) => {
+        if (started === false) autoStartRef.current.voteId = null;
+      }).catch((e) => {
         console.error("Auto startVoting failed:", e);
         autoStartRef.current.voteId = null;
       });
@@ -2691,6 +2785,14 @@ export default function App() {
     submissionsCount,
     groupMemberCount,
     startVoting,
+  ]);
+
+  useEffect(() => () => autoCloseGuard.reset(), [
+    autoCloseGuard,
+    currentGroupId,
+    activeVote?.id,
+    activeVote?.status,
+    groupSettings?.autoAdvanceWhenAllVoted,
   ]);
 
   // ✅ Auto: open -> closed when every group member has actually voted
@@ -2706,8 +2808,6 @@ export default function App() {
 
     if (!Array.isArray(members) || members.length === 0) return;
 
-    if (autoCloseRef.current.voteId === activeVote.id) return;
-
     // Build set of group member userIds
     const memberUserIds = members.map((m) => m.userId).filter(Boolean);
     if (memberUserIds.length === 0) return;
@@ -2719,11 +2819,7 @@ export default function App() {
     const allMembersVoted = memberUserIds.every((uid) => ballotUserIdSet.has(uid));
 
     if (allMembersVoted) {
-      autoCloseRef.current.voteId = activeVote.id;
-      closeVote({ auto: true }).catch((e) => {
-        console.error("Auto closeVote failed:", e);
-        autoCloseRef.current.voteId = null;
-      });
+      autoCloseGuard.run(activeVote.id, () => closeVote({ auto: true }));
     }
   }, [
     currentGroupId,
@@ -2733,6 +2829,8 @@ export default function App() {
     voteBallots,
     members,
     closeVote,
+    autoCloseGuard,
+    autoCloseRetry,
   ]);
 
   async function saveGroupWeights(overrides) {
@@ -2961,7 +3059,7 @@ export default function App() {
           </div>
 
           {!showAuthPrompt && (
-            <div className="hidden md:flex items-center gap-2">
+            <nav aria-label="Main navigation" className="hidden md:flex items-center gap-2">
               {topLevelTabs.map((t) => {
                 const isActive = activeTab === t.key;
                 return (
@@ -2969,6 +3067,7 @@ export default function App() {
                     key={t.key}
                     className={`ui-pill ${isActive ? "ui-pill-active" : "ui-pill-inactive"}`}
                     onClick={() => handleTopLevelTabClick(t.key)}
+                    aria-current={isActive ? "page" : undefined}
                     disabled={t.key === APP_TAB.COLLECTION && !user}
                     title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : ""}
                   >
@@ -2977,7 +3076,7 @@ export default function App() {
                   </button>
                 );
               })}
-            </div>
+            </nav>
           )}
         </div>
       </div>
@@ -3068,6 +3167,7 @@ export default function App() {
         open={isAddGameOpen}
         title="Add new game"
         onClose={() => setIsAddGameOpen(false)}
+        restoreFocus={() => document.querySelector('button[aria-label="Add new game"]')}
       >
         <AddGameForm form={addGameForm} setForm={setAddGameForm} onSubmit={addGame} />
       </Modal>
@@ -3183,7 +3283,7 @@ export default function App() {
               onRate={(value) => rateGame(selectedGameFresh.id, value)}
               onAdd={() => addToCollection(selectedGameFresh.id)}
               onRemove={() => removeFromCollection(selectedGameFresh.id)}
-              canEdit={user?.uid === selectedGameFresh.createdBy || isAdmin}
+              canEdit={canEditGame(selectedGameFresh, user?.uid, isAdmin)}
             />
           ) : (
             <div className="space-y-4">
@@ -3192,6 +3292,9 @@ export default function App() {
                 <GroupsPanel
                   user={user}
                   myGroups={myGroups}
+                  groupsReady={myGroupsReady}
+                  groupsError={myGroupsError}
+                  onRetryGroups={() => myGroupsRetryRef.current?.()}
                   currentGroupId={currentGroupId}
                   setCurrentGroupId={selectGroup}
                   onCreateGroup={createGroup}
@@ -3218,6 +3321,10 @@ export default function App() {
                     onBack={() => setGroupView(GROUP_VIEW.PICKER)}
                     onLeaveGroup={leaveGroup}
                     groupGames={groupGames}
+                    groupCollectionReady={groupCollectionReady && poolReady}
+                    groupLoadError={groupLoadError}
+                    groupLoadPermanent={groupLoadPermanent}
+                    onRetryLoad={retryAllLoads}
                     onOpenGame={(game) => {
                       // IMPORTANT: save where we came from so Back restores the Group view
                       setReturnCtx({ activeTab, groupView, groupTab });
@@ -3229,6 +3336,8 @@ export default function App() {
                         user={user}
                         currentGroupId={currentGroupId}
                         groupSettings={groupSettings}
+                        groupSettingsReady={groupSettingsReady}
+                        poolReady={poolReady}
                         groupGames={groupGames}
                         members={members}
                         activeVote={activeVote}
@@ -3250,6 +3359,7 @@ export default function App() {
                         submittedGameIds={submittedGameIds}
                         editorSourceGameIds={editorSourceGameIds}
                         groupMemberCount={groupMemberCount}
+                        membersReady={membersReady}
                         submissionsCount={submissionsCount}
                         ballotsCount={ballotsCount}
                         sessionPlayRecord={sessionPlayRecord}
@@ -3592,6 +3702,7 @@ export default function App() {
                         group={currentGroup}
                         user={user}
                         members={members}
+                        membersError={membersError}
                         myRole={myRole}
                         meta={groupSettings}
                         availableTags={groupAvailableTags}
@@ -3610,6 +3721,8 @@ export default function App() {
                       />
                     }
                     myCollectionGames={collectionGames}
+                    myCollectionReady={myCollectionReady && gamesReady}
+                    myCollectionError={myCollectionError || gamesError}
                     mySharedGameIds={mySharedGameIdsInCurrentGroup}
                     onSetMyGameSharedInGroup={setMyGameSharedInGroup}
                   />
@@ -3647,7 +3760,9 @@ export default function App() {
                     {activeTab === "library" ? "Library" : "My Collection"}
                   </h2>
                   {activeTab === "collection" && (
-                    <span className="ui-chip-muted">Owned: {myCollection.size}</span>
+                    <span className="ui-chip-muted">
+                      Owned: {myCollectionReady ? myCollection.size : "…"}
+                    </span>
                   )}
                 </div>
                 <p className="text-sm text-neutral-400">
@@ -3730,7 +3845,7 @@ export default function App() {
       />
 
       {!showAuthPrompt && (
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-700 bg-neutral-900/95 backdrop-blur md:hidden">
+        <nav aria-label="Main navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-700 bg-neutral-900/95 backdrop-blur md:hidden">
           <div className="mx-auto w-full max-w-3xl px-3 py-2">
             <div className="grid grid-cols-5 gap-2">
               {topLevelTabs.map((t) => {
@@ -3748,6 +3863,7 @@ export default function App() {
                     disabled={t.key === APP_TAB.COLLECTION && !user}
                     title={t.key === APP_TAB.COLLECTION && !user ? "Sign-in required" : t.label}
                     aria-label={t.label}
+                    aria-current={isActive ? "page" : undefined}
                   >
                     <span className="text-base leading-none">{t.icon}</span>
                   </button>
@@ -3770,7 +3886,7 @@ export default function App() {
           onRate={(value) => rateGame(selectedGameFresh.id, value)}
           onAdd={() => addToCollection(selectedGameFresh.id)}
           onRemove={() => removeFromCollection(selectedGameFresh.id)}
-          canEdit={user?.uid === selectedGameFresh.createdBy || isAdmin}
+          canEdit={canEditGame(selectedGameFresh, user?.uid, isAdmin)}
           onEdit={() => openEditGame(selectedGameFresh)}
         />
       )}

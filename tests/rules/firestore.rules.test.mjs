@@ -2,7 +2,7 @@ import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { deleteDoc, deleteField, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 const PROJECT_ID = "demo-boardgame-night";
 const RULES_PATH = new URL("../../firestore.rules", import.meta.url);
@@ -42,6 +42,22 @@ async function seedGroupWithMembers({
         joinedAt: now,
       });
     }
+  });
+}
+
+async function seedGame(gameId = "g1", overrides = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "games", gameId), {
+      title: "Catan",
+      description: "Trade resources",
+      imageUrl: "",
+      tags: ["strategy"],
+      createdBy: "alice",
+      ratingTotal: 0,
+      ratingCount: 0,
+      createdAt: now,
+      ...overrides,
+    });
   });
 }
 
@@ -91,33 +107,117 @@ describe("games rules", () => {
     );
   });
 
-  it("keeps metadata editing open but restricts delete to creator", async () => {
+  it("allows only the creator or an administrator to edit metadata", async () => {
+    await seedGame();
+    const creatorGame = doc(authedDb("alice"), "games", "g1");
+    const otherGame = doc(authedDb("bob"), "games", "g1");
+    const adminGame = doc(authedDb("admin"), "games", "g1");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "admins", "admin"), { isAdmin: true });
+      await setDoc(doc(context.firestore(), "admins", "not-an-admin"), {});
+      await setDoc(doc(context.firestore(), "admins", "disabled-admin"), { isAdmin: false });
+    });
+
+    await assertSucceeds(
+      updateDoc(creatorGame, {
+        title: "Catan (edited by creator)",
+        description: "Updated description",
+        imageUrl: "https://example.com/image.png",
+        tags: ["family"],
+        updatedAt: now + 1,
+      })
+    );
+    await assertSucceeds(updateDoc(creatorGame, { imageUrl: deleteField(), tags: deleteField() }));
+    await assertSucceeds(updateDoc(creatorGame, { imageUrl: "", tags: ["strategy"] }));
+    await assertSucceeds(updateDoc(adminGame, { title: "Admin edit" }));
+    await assertFails(updateDoc(otherGame, { title: "Unauthorized edit" }));
+    await assertFails(updateDoc(doc(authedDb("not-an-admin"), "games", "g1"), {
+      title: "Admin document without flag",
+    }));
+    await assertFails(updateDoc(doc(authedDb("disabled-admin"), "games", "g1"), {
+      title: "Disabled admin edit",
+    }));
+    await assertFails(updateDoc(doc(testEnv.unauthenticatedContext().firestore(), "games", "g1"), {
+      title: "Anonymous edit",
+    }));
+  });
+
+  it("rejects invalid metadata types and protected field changes, additions, and removals", async () => {
+    await seedGame("g1", { legacyField: "preserve" });
+    const game = doc(authedDb("bob"), "games", "g1");
+
+    for (const invalid of [
+      { title: 1 },
+      { description: deleteField() },
+      { imageUrl: 1 },
+      { tags: "strategy" },
+      { updatedAt: "now" },
+      { title: "Edited", createdBy: "bob" },
+      { title: "Edited", extraField: true },
+      { title: "Edited", legacyField: deleteField() },
+      { title: "Edited", createdAt: deleteField() },
+      { title: "Edited", ratingTotal: 1 },
+    ]) {
+      await assertFails(updateDoc(game, invalid));
+    }
+  });
+
+  it("allows signed-in rating aggregate updates only with numeric values and no other field changes", async () => {
+    await seedGame("g1", { legacyField: "preserve" });
+    const game = doc(authedDb("bob"), "games", "g1");
+
+    await assertSucceeds(updateDoc(game, { ratingTotal: 4, ratingCount: 1 }));
+    await assertSucceeds(updateDoc(game, { ratingTotal: 5 }));
+    for (const invalid of [
+      { ratingTotal: "5" },
+      { ratingCount: deleteField() },
+      { ratingTotal: 6, createdBy: "bob" },
+      { ratingTotal: 6, extraField: true },
+      { ratingTotal: 6, legacyField: deleteField() },
+      { ratingTotal: 6, createdAt: deleteField() },
+      { ratingTotal: 6, title: "Edited" },
+    ]) {
+      await assertFails(updateDoc(game, invalid));
+    }
+    await assertFails(updateDoc(doc(testEnv.unauthenticatedContext().firestore(), "games", "g1"), {
+      ratingTotal: 6,
+    }));
+  });
+
+  it("restricts deletion to the creator or an admin", async () => {
+    await seedGame();
+    await seedGame("g2");
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "admins", "admin"), { isAdmin: true });
+      await setDoc(doc(context.firestore(), "admins", "not-an-admin"), {});
+      await setDoc(doc(context.firestore(), "admins", "disabled-admin"), { isAdmin: false });
+    });
+
+    await assertFails(deleteDoc(doc(authedDb("bob"), "games", "g1")));
+    await assertFails(deleteDoc(doc(testEnv.unauthenticatedContext().firestore(), "games", "g1")));
+    await assertFails(deleteDoc(doc(authedDb("not-an-admin"), "games", "g2")));
+    await assertFails(deleteDoc(doc(authedDb("disabled-admin"), "games", "g2")));
+    await assertSucceeds(deleteDoc(doc(authedDb("alice"), "games", "g1")));
+    await assertSucceeds(deleteDoc(doc(authedDb("admin"), "games", "g2")));
+  });
+
+  it("allows administrators, but not other users, to manage legacy games without a creator", async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
-      await setDoc(doc(db, "games", "g1"), {
-        title: "Catan",
-        description: "Trade resources",
-        imageUrl: "",
-        tags: ["strategy"],
-        createdBy: "alice",
+      await setDoc(doc(db, "admins", "admin"), { isAdmin: true });
+      await setDoc(doc(db, "games", "legacy"), {
+        title: "Legacy game",
+        description: "Missing creator",
         ratingTotal: 0,
         ratingCount: 0,
         createdAt: now,
       });
     });
 
-    const bobDb = authedDb("bob");
-    const aliceDb = authedDb("alice");
-
-    await assertSucceeds(
-      updateDoc(doc(bobDb, "games", "g1"), {
-        title: "Catan (edited by collaborator)",
-        updatedAt: now + 1,
-      })
-    );
-
-    await assertFails(deleteDoc(doc(bobDb, "games", "g1")));
-    await assertSucceeds(deleteDoc(doc(aliceDb, "games", "g1")));
+    await assertFails(updateDoc(doc(authedDb("bob"), "games", "legacy"), { title: "Unauthorized" }));
+    await assertSucceeds(updateDoc(doc(authedDb("admin"), "games", "legacy"), { title: "Updated" }));
+    await assertFails(deleteDoc(doc(authedDb("bob"), "games", "legacy")));
+    await assertSucceeds(deleteDoc(doc(authedDb("admin"), "games", "legacy")));
   });
 });
 
@@ -672,6 +772,7 @@ describe("active session rules", () => {
 
 describe("submissions and ballots rules", () => {
   it("enforces submissions only for self during collecting", async () => {
+    await seedGame("g1");
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const db = context.firestore();
       await setDoc(doc(db, "groups", "grp1"), {

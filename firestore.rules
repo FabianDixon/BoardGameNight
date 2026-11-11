@@ -36,6 +36,17 @@ function metaDoc(groupId) {
   return get(metaPath(groupId)).data;
 }
 
+// Group hidden tags: a game carrying any hidden tag can't be submitted/activated.
+// Requires the catalog game to exist; tags are compared as stored (normalized by the app).
+function gameNotHiddenForGroup(groupId, gameId) {
+  return exists(/databases/$(database)/documents/games/$(gameId))
+    && (
+      !metaExists(groupId)
+      || !get(/databases/$(database)/documents/games/$(gameId)).data.get("tags", [])
+        .hasAny(metaDoc(groupId).get("hiddenTags", []))
+    );
+}
+
 function memberRole(groupId) {
   return get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.role;
 }
@@ -51,7 +62,9 @@ function canEditWeights(groupId) {
 
 // --- admin helpers ---
 function isAdmin() {
-  return exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+  return signedIn()
+    && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+    && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.isAdmin == true;
 }
 
 // -------------------------
@@ -73,9 +86,9 @@ match /games/{gameId} {
 
   allow update: if signedIn() && (
     (
-      (request.auth.uid == resource.data.createdBy || isAdmin())
-      && request.resource.data.diff(resource.data).changedKeys()
+      request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['title', 'description', 'imageUrl', 'tags', 'updatedAt'])
+      && (resource.data.get('createdBy', null) == request.auth.uid || isAdmin())
       && request.resource.data.title is string
       && request.resource.data.description is string
       && (
@@ -89,7 +102,7 @@ match /games/{gameId} {
       )
     )
     || (
-      request.resource.data.diff(resource.data).changedKeys()
+      request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['ratingTotal', 'ratingCount'])
       && request.resource.data.ratingTotal is number
       && request.resource.data.ratingCount is number
@@ -97,8 +110,7 @@ match /games/{gameId} {
   );
 
   allow delete: if signedIn()
-    && ('createdBy' in resource.data)
-    && (resource.data.createdBy == request.auth.uid || isAdmin());
+    && (resource.data.get('createdBy', null) == request.auth.uid || isAdmin());
 }
 
 // -------------------------
@@ -281,12 +293,24 @@ match /groups/{groupId}/activeSession/{docId} {
 
   function isMemberClearOnClose() {
     return docId == "meta"
-      && resource.data.status == "open"
+      && (
+        resource.data.status == "open"
+        || (
+          resource.data.status == "collecting"
+          && resource.data.activeVoteId is string
+          && get(/databases/$(database)/documents/groups/$(groupId)/votes/$(resource.data.activeVoteId)).data.status == "closed"
+        )
+      )
       && request.resource.data.status == null
       && request.resource.data.activeVoteId == null
       && changedKeys().hasOnly(["status", "activeVoteId", "sessionIndex", "updatedAt"])
       && request.resource.data.updatedAt is number
-      && request.resource.data.sessionIndex == resource.data.sessionIndex + 1;
+      && (
+        (resource.data.get("sessionIndex", null) is number
+          && request.resource.data.sessionIndex == resource.data.sessionIndex + 1)
+        || (resource.data.get("sessionIndex", null) == null
+          && request.resource.data.sessionIndex == 1)
+      );
   }
 
   allow update: if isGroupMember(groupId) && (
@@ -343,6 +367,7 @@ match /groups/{groupId}/pool/{gameId} {
   function isActivationCreate() {
     return metaExists()
       && metaStatus() == "collecting"
+      && gameNotHiddenForGroup(groupId, gameId)
       && request.resource.data.keys().hasOnly([
         "isActive",
         "addedAt",
@@ -357,8 +382,9 @@ match /groups/{groupId}/pool/{gameId} {
   function isActivationUpdate() {
     return metaExists()
       && metaStatus() == "collecting"
+      && gameNotHiddenForGroup(groupId, gameId)
       && (
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "isActive",
           "cycleStartedAt",
           "cycleVoteCount",
@@ -395,7 +421,7 @@ match /groups/{groupId}/pool/{gameId} {
 
   function isMemberStatsUpdate() {
     return isGroupMember(groupId)
-      && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         "lastVotedAt",
         "cycleVoteCount",
         "lifetimeVoteCount",
@@ -420,11 +446,75 @@ match /groups/{groupId}/pool/{gameId} {
     || isOwnerPlayedOverrideOnlyCreate()
   );
 
+  // Stats branches may also flip isActive; never allow a hidden-tag game to become active.
+  // Exception: a vote-result override may put a previous winner (lastWonSession set) back in the
+  // pool even if it is now hidden/missing, so history corrections stay possible.
+  // Historical managers must atomically change the matching play's winner.
+  function isWinnerRestoration() {
+    return (isSessionOwner() || isGroupOwner(groupId))
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["isActive"])
+      && resource.data.get("lastWonSession", null) is number;
+  }
+
+  function isCanonicalPostWinner(playData, restoredGameId) {
+    let overrideResults = playData.get("overrideResults", []);
+    let rawWinnerId = playData.get("winnerGameId", null);
+    return (
+      (!("overrideResults" in playData) || (overrideResults is list && overrideResults.size() == 0))
+      && (
+        rawWinnerId == null
+        || (
+          rawWinnerId is string
+          && rawWinnerId.matches("^([^\\s\\p{Z}\\x{FEFF}])(.*[^\\s\\p{Z}\\x{FEFF}])?$")
+          && rawWinnerId != restoredGameId
+        )
+      )
+    ) || (
+      overrideResults is list
+      && overrideResults.size() > 0
+      && overrideResults[0] is map
+      && overrideResults[0].get("isWinner", false) == true
+      && overrideResults[0].get("gameId", null) is string
+      && overrideResults[0].gameId.matches("^([^\\s\\p{Z}\\x{FEFF}])(.*[^\\s\\p{Z}\\x{FEFF}])?$")
+      && overrideResults[0].gameId == playData.get("winnerGameId", null)
+      && overrideResults[0].gameId != restoredGameId
+    );
+  }
+
+  function isHistoricalWinnerRestoration() {
+    let voteId = request.resource.data.get("restorationVoteId", null);
+    let votePath = /databases/$(database)/documents/groups/$(groupId)/votes/$(voteId);
+    let playPath = /databases/$(database)/documents/groups/$(groupId)/plays/$(voteId);
+    return voteId is string
+      && resource.data.get("isActive", false) == false
+      && request.resource.data.isActive == true
+      && resource.data.get("lastWonSession", null) is number
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["isActive", "restorationVoteId"])
+      && exists(votePath)
+      && get(votePath).data.status == "closed"
+      && (isGroupOwner(groupId) || memberRole(groupId) == "moderator"
+        || get(votePath).data.createdBy == request.auth.uid)
+      && exists(playPath)
+      && get(playPath).data.get("sessionIndex", null) is number
+      && resource.data.lastWonSession == get(playPath).data.sessionIndex
+      && get(playPath).data.winnerGameId == gameId
+      && isCanonicalPostWinner(getAfter(playPath).data, gameId);
+  }
+
+  function notNewlyActivatingHidden() {
+    return resource.data.get("isActive", false) == true
+      || request.resource.data.get("isActive", false) != true
+      || gameNotHiddenForGroup(groupId, gameId)
+      || isWinnerRestoration();
+  }
+
   allow update: if isGroupMember(groupId) && (
+    isHistoricalWinnerRestoration()
+    || (notNewlyActivatingHidden() && (
     isActivationUpdate()
     || (
       (isSessionOwner() || isGroupOwner(groupId))
-      && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+      && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         "lastVotedAt",
         "cycleVoteCount",
         "lifetimeVoteCount",
@@ -437,6 +527,7 @@ match /groups/{groupId}/pool/{gameId} {
     )
     || isMemberStatsUpdate()
     || isOwnerPlayedOverrideOnlyUpdate()
+    ))
   );
 
   allow delete: if false;
@@ -474,18 +565,29 @@ match /groups/{groupId}/plays/{playId} {
   function canEditPlayRecord() {
     return isGroupOwner(groupId)
       || memberRole(groupId) == "moderator"
-      || (resource.data.createdBy != null && request.auth.uid == resource.data.createdBy);
+      || (resource.data.get("createdBy", null) != null && request.auth.uid == resource.data.createdBy);
+  }
+
+  function canEditOwnVoteOverride() {
+    let voteId = resource.data.voteId;
+    let votePath = /databases/$(database)/documents/groups/$(groupId)/votes/$(voteId);
+    return voteId is string
+      && exists(votePath)
+      && get(votePath).data.status == "closed"
+      && get(votePath).data.createdBy == request.auth.uid
+      && request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(["overrideResults", "winnerGameId", "updatedAt", "createdAt", "createdBy"]);
   }
 
   allow update: if isGroupMember(groupId)
-    && canEditPlayRecord()
+    && (canEditPlayRecord() || canEditOwnVoteOverride())
     && isValidPlayRecordShape()
     && request.resource.data.groupId == resource.data.groupId
     && request.resource.data.voteId == resource.data.voteId
     // Allow backfilling createdBy/createdAt on old docs that pre-date these fields.
     // Once non-null they become immutable on subsequent writes.
-    && (resource.data.createdBy == null || request.resource.data.createdBy == resource.data.createdBy)
-    && (resource.data.createdAt == null || request.resource.data.createdAt == resource.data.createdAt);
+    && (resource.data.get("createdBy", null) == null || request.resource.data.createdBy == resource.data.createdBy)
+    && (resource.data.get("createdAt", null) == null || request.resource.data.createdAt == resource.data.createdAt);
 
   allow delete: if false;
 }
@@ -564,7 +666,11 @@ match /groups/{groupId}/votes/{voteId}/submissions/{userId} {
   allow create, update, delete: if isGroupMember(groupId)
     && isSelf(userId)
     && voteStatus() == "collecting"
-    && (isGameSubmission() || isNoSubmissionRecord());
+    && (isGameSubmission() || isNoSubmissionRecord())
+    && (
+      !request.resource.data.keys().hasAny(["gameId"])
+      || gameNotHiddenForGroup(groupId, request.resource.data.gameId)
+    );
 }
 
 // -------------------------
