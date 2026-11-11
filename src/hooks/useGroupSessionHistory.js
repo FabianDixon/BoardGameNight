@@ -1,5 +1,5 @@
 // src/hooks/useGroupSessionHistory.js
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 import { db } from "../firebase";
 
@@ -8,20 +8,40 @@ import { db } from "../firebase";
  * 
  * @param {string} currentGroupId - The current group ID
  * @param {boolean} groupAccessReady - Whether group access is ready
- * @returns {Array<Object>} Array of play records ordered by playedAt DESC (newest first)
+ * @returns {{history: Array<Object>, loading: boolean, error: Error|null}}
+ *   Play records ordered by playedAt DESC (newest first), with subscription state.
  */
-export function useGroupSessionHistory(currentGroupId, groupAccessReady) {
+export function useGroupSessionHistoryState(currentGroupId, groupAccessReady) {
+  const [retryVersion, setRetryVersion] = useState(0);
   const [state, setState] = useState(() => ({
     currentGroupId,
     groupAccessReady,
     history: [],
+    loading: Boolean(currentGroupId),
+    error: null,
   }));
+  const retry = useCallback(() => {
+    setState({
+      currentGroupId,
+      groupAccessReady,
+      history: [],
+      loading: Boolean(currentGroupId),
+      error: null,
+    });
+    setRetryVersion((version) => version + 1);
+  }, [currentGroupId, groupAccessReady]);
 
   if (
     state.currentGroupId !== currentGroupId ||
     state.groupAccessReady !== groupAccessReady
   ) {
-    setState({ currentGroupId, groupAccessReady, history: [] });
+    setState({
+      currentGroupId,
+      groupAccessReady,
+      history: [],
+      loading: Boolean(currentGroupId),
+      error: null,
+    });
   }
 
   useEffect(() => {
@@ -39,13 +59,21 @@ export function useGroupSessionHistory(currentGroupId, groupAccessReady) {
             currentGroupId,
             groupAccessReady,
             history: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+            loading: false,
+            error: null,
           });
         }
       },
       (err) => {
         if (active) {
           console.error("Failed to load session history:", err);
-          setState({ currentGroupId, groupAccessReady, history: [] });
+          setState({
+            currentGroupId,
+            groupAccessReady,
+            history: [],
+            loading: false,
+            error: err,
+          });
         }
       }
     );
@@ -54,7 +82,24 @@ export function useGroupSessionHistory(currentGroupId, groupAccessReady) {
       active = false;
       unsubscribe();
     };
-  }, [currentGroupId, groupAccessReady]);
+  }, [currentGroupId, groupAccessReady, retryVersion]);
 
-  return state.history;
+  if (state.currentGroupId !== currentGroupId) {
+    return {
+      history: [],
+      loading: Boolean(currentGroupId),
+      error: null,
+      retry,
+    };
+  }
+  return {
+    history: state.history,
+    loading: state.loading,
+    error: state.error,
+    retry,
+  };
+}
+
+export function useGroupSessionHistory(currentGroupId, groupAccessReady) {
+  return useGroupSessionHistoryState(currentGroupId, groupAccessReady).history;
 }

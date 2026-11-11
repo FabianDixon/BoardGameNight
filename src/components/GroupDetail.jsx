@@ -1,6 +1,7 @@
 // src/components/GroupDetail.jsx
 import { useMemo, useState } from "react";
 import GameTile from "./GameTile";
+import GroupHistorySearch from "./GroupHistorySearch";
 import { GROUP_TAB, POOL_FILTER } from "../constants/workflow";
 import { normalizeGameTags } from "../utils/gameTags";
 
@@ -20,6 +21,11 @@ export default function GroupDetail({
   onToast,
   votingNode, 
   historyNode,
+  historyRecords = [],
+  historyGames = [],
+  historyLoading = false,
+  historyLoadError = null,
+  onRetryHistoryLoad,
   statisticsNode,
   toolsNode,
   settingsNode,
@@ -393,11 +399,21 @@ export default function GroupDetail({
 
       {groupTab === GROUP_TAB.VOTING && votingNode}
       {groupTab === GROUP_TAB.HISTORY && (
-        historyNode || (
-          <div className="ui-surface p-4">
-            <p className="text-sm text-neutral-300">No history available yet.</p>
-          </div>
-        )
+        <GroupHistorySearch
+          records={historyRecords}
+          games={historyGames}
+          loading={historyLoading}
+          error={historyLoadError}
+          onRetry={onRetryHistoryLoad}
+        >
+          {(filteredHistory) => typeof historyNode === "function"
+            ? historyNode(filteredHistory)
+            : historyNode || (
+                <div className="ui-surface p-4">
+                  <p className="text-sm text-neutral-300">No history available yet.</p>
+                </div>
+              )}
+        </GroupHistorySearch>
       )}
       {groupTab === GROUP_TAB.STATISTICS && (
         statisticsNode || (

@@ -32,7 +32,7 @@ import { useVoteBallots } from "./hooks/useVoteBallots";
 import { useSessionSubmissions } from "./hooks/useSessionSubmissions";
 import { useMySubmission } from "./hooks/useMySubmission";
 import { useSessionMeta } from "./hooks/useSessionMeta";
-import { useGroupSessionHistory } from "./hooks/useGroupSessionHistory";
+import { useGroupSessionHistoryState } from "./hooks/useGroupSessionHistory";
 import useIsAdmin from "./hooks/useIsAdmin";
 
 import ProfileCard from "./components/ProfileCard";
@@ -365,7 +365,12 @@ export default function App() {
   const [mySharedGameIdsInCurrentGroup, setMySharedGameIdsInCurrentGroup] = useState(new Set());
 
   const sessionMeta = useSessionMeta(currentGroupId, groupAccessReady);
-  const sessionHistory = useGroupSessionHistory(currentGroupId, groupAccessReady);
+  const {
+    history: sessionHistory,
+    loading: sessionHistoryLoading,
+    error: sessionHistoryError,
+    retry: retrySessionHistory,
+  } = useGroupSessionHistoryState(currentGroupId, groupAccessReady);
 
   const [isAddGameOpen, setIsAddGameOpen] = useState(false);
   const [addGameForm, setAddGameForm] = useState({
@@ -3374,7 +3379,7 @@ export default function App() {
                         showArchiveHistory={false}
                       />
                     }
-                    historyNode={(
+                    historyNode={(filteredHistory) => (
                       <div className="space-y-4">
                         <div className="ui-surface p-5 md:p-6">
                           <div className="flex items-start justify-between gap-4">
@@ -3384,13 +3389,13 @@ export default function App() {
                                 A record of all your group's past sessions and outcomes.
                               </p>
                             </div>
-                            <span className="ui-chip-muted text-sm shrink-0">{normalizedSessionHistory?.length || 0} session{normalizedSessionHistory?.length === 1 ? "" : "s"}</span>
+                            <span className="ui-chip-muted text-sm shrink-0">{filteredHistory.length} session{filteredHistory.length === 1 ? "" : "s"}</span>
                           </div>
                         </div>
 
-                        {normalizedSessionHistory && normalizedSessionHistory.length > 0 ? (
+                        {filteredHistory.length > 0 ? (
                           <div className="space-y-3 px-4 md:px-0">
-                            {normalizedSessionHistory.map((play) => {
+                            {filteredHistory.map((play) => {
                               const title = play?.winnerGameId
                                 ? (games.find((g) => g.id === play.winnerGameId)?.title || play.winnerGameId)
                                 : "No winner";
@@ -3678,6 +3683,11 @@ export default function App() {
                         )}
                       </div>
                     )}
+                    historyRecords={normalizedSessionHistory}
+                    historyGames={games}
+                    historyLoading={sessionHistoryLoading}
+                    historyLoadError={sessionHistoryError}
+                    onRetryHistoryLoad={retrySessionHistory}
                     toolsNode={(
                       <GroupToolsPanel
                         currentGroupId={currentGroupId}
