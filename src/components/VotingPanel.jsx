@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import GameImage from "./GameImage";
 import Fab from "./ui/Fab";
 import { VOTE_STATUS } from "../constants/workflow";
+import { getHiddenTagSet, isGameHiddenByTags } from "../utils/hiddenTags";
 import {
   DEFAULT_AVATAR_ID,
   avatarById,
@@ -318,6 +319,8 @@ function VotingPanelInner({
   user,
   currentGroupId,
   groupSettings,
+  groupSettingsReady = true,
+  poolReady = true,
   groupGames,
   members,
 
@@ -352,6 +355,7 @@ function VotingPanelInner({
   canCloseActiveVote,
 
   groupMemberCount = 0,
+  membersReady = true,
   submissionsCount = 0,
   ballotsCount = 0,
   onSaveVoteOverride,
@@ -409,8 +413,13 @@ function VotingPanelInner({
     const pool = poolActiveIds instanceof Set ? poolActiveIds : new Set();
     const submitted = submittedGameIds instanceof Set ? submittedGameIds : new Set();
 
-    return (groupGames || []).filter((g) => !pool.has(g.id) && !submitted.has(g.id));
-  }, [status, groupGames, poolActiveIds, submittedGameIds]);
+    if (!groupSettingsReady || !poolReady) return [];
+    const hidden = getHiddenTagSet(groupSettings);
+
+    return (groupGames || []).filter(
+      (g) => !pool.has(g.id) && !submitted.has(g.id) && !isGameHiddenByTags(g, hidden)
+    );
+  }, [status, groupGames, poolActiveIds, submittedGameIds, groupSettings, groupSettingsReady, poolReady]);
 
   const [phaseSearch, setPhaseSearch] = useState("");
 
@@ -843,6 +852,7 @@ function VotingPanelInner({
   }
 
   function handleSetOverrideVotes(gameId, value) {
+    if (!membersReady) return;
     setOverrideDraft((prev) =>
       prev.map((r) =>
         r.gameId === gameId
@@ -890,7 +900,7 @@ function VotingPanelInner({
                     <>
                       <span className="ui-chip-blue">Collecting submissions</span>
                       <span className="text-sm text-neutral-400">
-                        {formatProgress(submissionsCount, groupMemberCount)} of {groupMemberCount}
+                        {membersReady ? `${formatProgress(submissionsCount, groupMemberCount)} of ${groupMemberCount}` : "…"}
                       </span>
                     </>
                   )}
@@ -898,7 +908,7 @@ function VotingPanelInner({
                     <>
                       <span className="ui-chip-blue">Voting open</span>
                       <span className="text-sm text-neutral-400">
-                        {formatProgress(ballotsCount, groupMemberCount)} of {groupMemberCount}
+                        {membersReady ? `${formatProgress(ballotsCount, groupMemberCount)} of ${groupMemberCount}` : "…"}
                       </span>
                     </>
                   )}
@@ -1011,6 +1021,7 @@ function VotingPanelInner({
           <p className="text-sm text-gray-300">
             Select a game and press <span className="font-semibold">Submit</span>, or choose{" "}
             <span className="font-semibold">No Submission</span> if you don't want to submit a game this round.
+            Games with a tag hidden by this group can't be submitted.
           </p>
 
           <button
@@ -1177,9 +1188,9 @@ function VotingPanelInner({
                     <div className="text-sm text-neutral-300">
                       Votes remaining:{" "}
                       <span className={overrideVotesRemaining < 0 ? "text-red-400 font-bold" : "font-semibold text-white"}>
-                        {overrideVotesRemaining}
+                        {membersReady ? overrideVotesRemaining : "…"}
                       </span>
-                      {overrideVotesRemaining < 0 && (
+                      {membersReady && overrideVotesRemaining < 0 && (
                         <span className="ml-2 text-xs text-red-400">Exceeds member count</span>
                       )}
                     </div>
@@ -1207,7 +1218,8 @@ function VotingPanelInner({
                             <input
                               type="number"
                               min="0"
-                              max={groupMemberCount}
+                              max={membersReady ? groupMemberCount : undefined}
+                              disabled={!membersReady}
                               value={r.votes}
                               onChange={(e) => handleSetOverrideVotes(r.gameId, e.target.value)}
                               className="w-20 text-sm text-right"
@@ -1222,7 +1234,7 @@ function VotingPanelInner({
                       <button
                         type="button"
                         className="ui-btn-primary text-sm"
-                        disabled={isSavingVoteOverride || overrideVotesRemaining < 0}
+                        disabled={isSavingVoteOverride || !membersReady || overrideVotesRemaining < 0}
                         onClick={handleSaveVoteOverride}
                       >
                         {isSavingVoteOverride ? "Saving…" : "Save"}

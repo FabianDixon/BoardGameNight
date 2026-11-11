@@ -19,6 +19,7 @@ export default function GroupSettingsPanel({
   group,
   user,
   members,
+  membersError = null,
   myRole,
 
   // Settings docs
@@ -104,6 +105,7 @@ export default function GroupSettingsPanel({
         group={group}
         user={user}
         members={members}
+        membersError={membersError}
         isOwner={isOwner}
         ownerOnlyMsg={ownerOnlyMsg}
         onSetMemberRole={onSetMemberRole}
@@ -217,9 +219,9 @@ function MetaSettingsSection({
 
       <div className="border border-neutral-700 rounded-xl p-3 bg-neutral-900 space-y-2">
         <div>
-          <div className="font-semibold text-sm text-white">Hidden tags in Group Collection</div>
+          <div className="font-semibold text-sm text-white">Hidden tags</div>
           <div className="text-xs text-gray-400 mt-1">
-            Games with any selected tag are hidden from Group Collection only.
+            Games with any selected tag are hidden from Group Collection and can't be submitted or added to newly started votes. Existing pool records, statistics and already-open votes are not changed.
           </div>
         </div>
 
@@ -295,6 +297,7 @@ function MembersSection({
   group,
   user,
   members,
+  membersError,
   isOwner,
   ownerOnlyMsg,
   onSetMemberRole,
@@ -363,7 +366,11 @@ function MembersSection({
             );
           })
         ) : (
-          <div className="text-sm text-gray-300">Loading members…</div>
+          membersError ? (
+            <div role="alert" className="text-sm text-red-300">Couldn't load members.</div>
+          ) : (
+            <div className="text-sm text-gray-300">Loading members…</div>
+          )
         )}
       </div>
     </div>

@@ -1,9 +1,13 @@
 // src/components/GroupsPanel.jsx
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { isPermanentError } from "../utils/loadReliability";
 
 export default function GroupsPanel({
   user,
   myGroups,
+  groupsReady = true,
+  groupsError = null,
+  onRetryGroups,
   currentGroupId,
   setCurrentGroupId,
   onCreateGroup,
@@ -12,6 +16,9 @@ export default function GroupsPanel({
 }) {
   const [groupName, setGroupName] = useState("");
   const [joinCode, setJoinCode] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const creatingRef = useRef(false);
 
   const groupsSorted = useMemo(() => {
     return [...(myGroups || [])].sort((a, b) =>
@@ -33,27 +40,40 @@ export default function GroupsPanel({
           <div className="flex gap-2">
             <input
               className="w-full"
+              aria-label="Group name"
               placeholder="Group name"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
-              disabled={!user}
+              disabled={!user || creating}
             />
             <button
               className="ui-btn-primary px-3"
-              disabled={!user || !groupName.trim()}
+              disabled={!user || !groupName.trim() || creating}
               onClick={async () => {
-                const id = await onCreateGroup(groupName.trim());
-                setGroupName("");
-                if (id) {
-                  setCurrentGroupId(id);
-                  onOpenGroup?.(); // go to detail
+                if (creatingRef.current || !user || !groupName.trim()) return;
+                creatingRef.current = true;
+                setCreating(true);
+                setCreateError("");
+                try {
+                  const id = await onCreateGroup(groupName.trim());
+                  if (id) {
+                    setGroupName("");
+                    setCurrentGroupId(id);
+                    onOpenGroup?.(); // go to detail
+                  }
+                } catch {
+                  setCreateError("Could not create group. Please try again.");
+                } finally {
+                  creatingRef.current = false;
+                  setCreating(false);
                 }
               }}
               title={!user ? "Sign-in required" : ""}
             >
-              Create
+              {creating ? "Creating…" : "Create"}
             </button>
           </div>
+          {createError && <p role="alert" className="text-sm text-red-400 mt-2">{createError}</p>}
         </div>
 
         <div className="ui-surface-subtle p-3 md:p-4">
@@ -62,6 +82,7 @@ export default function GroupsPanel({
           <div className="flex gap-2">
             <input
               className="w-full"
+              aria-label="Invite code"
               placeholder="Paste invite code"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
@@ -90,10 +111,29 @@ export default function GroupsPanel({
       <div className="mt-4">
         <div className="flex items-center justify-between gap-3 mb-2">
           <div className="text-sm font-semibold text-white">Your groups</div>
-          <span className="ui-chip-muted">{groupsSorted.length}</span>
+          <span className="ui-chip-muted">{groupsReady ? groupsSorted.length : "…"}</span>
         </div>
 
-        {groupsSorted.length === 0 ? (
+        {groupsError && (
+          <p role="alert" className="text-sm text-red-300 mb-2">
+            Couldn't load your groups
+            {groupsError?.code ? ` (${groupsError.code})` : ""}.{" "}
+            {isPermanentError(groupsError) ? "Check your access, then retry." : "Retrying automatically."}{" "}
+            {onRetryGroups && (
+              <button type="button" className="text-blue-400 hover:underline" onClick={onRetryGroups}>
+                Retry now
+              </button>
+            )}
+          </p>
+        )}
+
+        {!groupsReady && groupsSorted.length === 0 ? (
+          <div className="ui-surface-subtle p-4">
+            <p className="text-sm text-gray-300">
+              {groupsError ? "Groups unavailable." : "Loading groups…"}
+            </p>
+          </div>
+        ) : groupsSorted.length === 0 ? (
           <div className="ui-surface-subtle p-4">
             <p className="text-sm text-gray-300">No groups yet. Create one or join with an invite code.</p>
           </div>

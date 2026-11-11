@@ -12,6 +12,10 @@ export default function GroupDetail({
   onBack,
   onLeaveGroup,
   groupGames,
+  groupCollectionReady = true,
+  groupLoadError = null,
+  groupLoadPermanent = false,
+  onRetryLoad,
   onOpenGame,
   onToast,
   votingNode, 
@@ -22,6 +26,8 @@ export default function GroupDetail({
   canEditNewness,
   onTogglePlayedOverride,
   myCollectionGames,
+  myCollectionReady = true,
+  myCollectionError = null,
   mySharedGameIds,
   onSetMyGameSharedInGroup,
 }) {
@@ -169,6 +175,23 @@ export default function GroupDetail({
         </div>
       </div>
 
+      {groupLoadError && (
+        <div role="alert" className="ui-surface p-3 flex items-center justify-between gap-3 border border-red-500/40">
+          <p className="text-sm text-red-300">
+            Couldn't load this group's data
+            {groupLoadError?.code ? ` (${groupLoadError.code})` : ""}.{" "}
+            {groupLoadPermanent
+              ? "This won't resolve on its own; check your access, then retry."
+              : "Retrying automatically."}
+          </p>
+          {onRetryLoad && (
+            <button type="button" className="text-sm text-blue-400 hover:underline" onClick={onRetryLoad}>
+              {groupLoadPermanent ? "Retry" : "Retry now"}
+            </button>
+          )}
+        </div>
+      )}
+
       {groupTab === GROUP_TAB.COLLECTION && (
         <div className="ui-surface p-4">
           <div className="flex items-center justify-between mb-3">
@@ -187,7 +210,7 @@ export default function GroupDetail({
               )}
 
               <span className="text-sm text-gray-300">
-                {filteredGames.length} / {poolCounts.total} games
+                {groupCollectionReady ? `${filteredGames.length} / ${poolCounts.total} games` : "Loading…"}
               </span>
             </div>
           </div>
@@ -201,7 +224,7 @@ export default function GroupDetail({
               onClick={() => setPoolFilter(POOL_FILTER.ALL)}
               title="Show all games"
             >
-              All ({poolCounts.total})
+              All ({groupCollectionReady ? poolCounts.total : "…"})
             </button>
 
             <button
@@ -212,7 +235,7 @@ export default function GroupDetail({
               onClick={() => setPoolFilter(POOL_FILTER.IN_POOL)}
               title="Show games that are already in the pool"
             >
-              🎲 In pool ({poolCounts.inPool})
+              🎲 In pool ({groupCollectionReady ? poolCounts.inPool : "…"})
             </button>
 
             <button
@@ -223,11 +246,15 @@ export default function GroupDetail({
               onClick={() => setPoolFilter(POOL_FILTER.OUT_OF_POOL)}
               title="Show games that are not in the pool"
             >
-              Not in pool ({poolCounts.outPool})
+              Not in pool ({groupCollectionReady ? poolCounts.outPool : "…"})
             </button>
           </div>
 
-          {poolCounts.total === 0 ? (
+          {!groupCollectionReady ? (
+            <p className="text-sm text-gray-300">
+              {groupLoadError ? "Group collection unavailable." : "Loading group collection…"}
+            </p>
+          ) : poolCounts.total === 0 ? (
             <p className="text-sm text-gray-300">
               No games in this group yet. Add games to your collection to
               populate it.
@@ -308,7 +335,18 @@ export default function GroupDetail({
             />
           </div>
 
-          {(myCollectionGames || []).length === 0 ? (
+          {myCollectionError ? (
+            <p role="alert" className="text-sm text-red-300">
+              Couldn't load your collection.{" "}
+              {onRetryLoad && (
+                <button type="button" className="text-blue-400 hover:underline" onClick={onRetryLoad}>
+                  Retry
+                </button>
+              )}
+            </p>
+          ) : !myCollectionReady ? (
+            <p className="text-sm text-gray-300">Loading your collection…</p>
+          ) : (myCollectionGames || []).length === 0 ? (
             <p className="text-sm text-gray-300">Your collection is empty.</p>
           ) : (
             <div className="max-h-[70vh] overflow-auto divide-y">
