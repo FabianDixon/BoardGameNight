@@ -55,7 +55,11 @@ Visual tone
 
 A. Keep the current flow
 
-Do not reinvent navigation or app structure unless something is clearly broken.
+Do not reinvent navigation or app structure unless something is clearly broken
+or an explicit product decision calls for it. The expandable action button is
+one such decision: it keeps Library, My Collection, and Groups in the mobile
+bottom navigation while providing Add Game, Profile settings, and personal
+analytics from the action button. Desktop navigation retains its destinations.
 
 B. Art first
 
@@ -234,6 +238,7 @@ This should feel distinct from the live/current session flow.
 Needs:
 	•	readable session cards/timeline/archive presentation
 	•	clear home for past results, played games, and placements
+	•	search for played games to find past sessions without scrolling
 	•	stable structure that can grow into analytics/statistics surfaces later
 
 Game Detail

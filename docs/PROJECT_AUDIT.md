@@ -25,7 +25,8 @@ the product's established workflows.
 ## Current scope
 
 The user selected **bugs first**: audit and fix evidence-backed reliability,
-correctness, maintainability, and UI issues. The features below are deferred.
+correctness, maintainability, and UI issues. The feature requests below were
+deferred until that work was complete and have since been implemented.
 
 Priority investigation areas:
 
@@ -38,7 +39,7 @@ Priority investigation areas:
    existing pool data separately; do not assume the cause.
 4. UI quirks and broader code-quality problems with concrete user impact.
 
-## Deferred feature requests
+## Deferred feature requests, now implemented
 
 - **Group history search:** allow searching played games in a group's history
   so users can find when a game was last played without scrolling.
@@ -47,9 +48,24 @@ Priority investigation areas:
   settings, and profile/analytics actions. The settings action should open the
   current Profile page; the profile action should open personal analytics.
   Remove their two corresponding bottom-navigation icons, leaving three.
-  Preserve the existing visual language and accessibility. This is an explicit
-  requested departure from the design reference's current navigation guidance;
-  document the final rationale and any further decisions when implemented.
+  Preserve the existing visual language and accessibility.
+
+History search filters the group's existing, newest-first session records by
+selected and additionally played game titles; missing catalog entries fall back
+to their stored IDs. Search does not change the stored records.
+
+The action button is available across the app, with keyboard dismissal and
+focus handling, and is hidden while dialogs are open. Mobile bottom navigation
+contains Library, Collection, and Groups; the existing desktop destinations
+remain available. This is an explicit user-requested departure from the earlier
+design-reference guidance against changing navigation. The design reference
+now documents that decision.
+
+Feature verification included 40 unit tests, a headless browser regression,
+71 Firestore emulator rules tests, lint, and a production build. Isolated browser
+checks covered search, keyboard focus, dialog suppression, action callbacks,
+voting-button coexistence, and responsive FAB positioning; they did not
+exercise authenticated end-to-end workflows.
 
 ## Review and validation process
 

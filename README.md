@@ -28,6 +28,12 @@ A lightweight web app to help friends organize board game nights:
 - Create / join groups (invite code)
 - Materialized group collection (union of members’ collections)
 - Group settings (weights overrides)
+- Search group history for played games and their past sessions
+
+### Navigation
+- Library, My Collection, and Groups remain in the mobile bottom navigation
+- Desktop navigation retains the Profile and Analytics destinations
+- Expand the action button for Add Game, Profile settings, and personal analytics
 
 ### Voting Sessions
 - Session workflow:

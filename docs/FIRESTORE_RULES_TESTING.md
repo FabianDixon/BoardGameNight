@@ -34,8 +34,13 @@ npm run test:rules:verbose
   the same demo project's emulator data.
 
 The separate `npm run test:unit` command runs loading, session reliability,
-hidden-tag eligibility, game permissions, and modal accessibility tests without
-the emulator.
+hidden-tag eligibility, game permissions, modal accessibility, group-history
+search, and expandable-navigation tests without the emulator.
+
+`npm run test:browser` runs the navigation and modal lifecycle regression in
+headless Chrome. It requires Chrome and a Node.js version with native
+`WebSocket` support; set `CHROME_BIN` if Chrome is not in a detected location.
+The test reports a skip when either prerequisite is unavailable.
 
 ## Covered baseline cases
 

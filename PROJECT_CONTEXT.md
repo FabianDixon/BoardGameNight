@@ -254,7 +254,11 @@ The codebase is now considered stable enough to move out of the cleanup-first ph
 
 Analytics Tab — Architecture Notes
 
-The personal Analytics tab is implemented as a dedicated top-level tab (APP_TAB.ANALYTICS) in the bottom navigation.
+Personal analytics is implemented as a dedicated top-level destination
+(`APP_TAB.ANALYTICS`), reached through the expandable action button rather than
+the mobile bottom navigation. Profile settings are available from the same
+button; the mobile bottom navigation contains Library, My Collection, and
+Groups, while the desktop navigation retains Profile and Analytics.
 
 Key implementation details contributors should know:
 
