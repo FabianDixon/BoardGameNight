@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import {
   getGameTagLabel,
   normalizeGameTag,
@@ -8,6 +8,7 @@ import {
 
 export default function GameTagsField({ value, onChange }) {
   const [draftTag, setDraftTag] = useState("");
+  const customTagId = useId();
 
   const tags = useMemo(() => normalizeGameTags(value), [value]);
 
@@ -59,7 +60,9 @@ export default function GameTagsField({ value, onChange }) {
       </div>
 
       <div className="flex gap-2">
+        <label htmlFor={customTagId} className="sr-only">Custom tag</label>
         <input
+          id={customTagId}
           className="w-full text-sm"
           placeholder="Custom tag"
           value={draftTag}

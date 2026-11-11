@@ -1,5 +1,5 @@
 // src/components/ProfileCard.jsx
-import { useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import {
   EmailAuthProvider,
   getAuth,
@@ -33,6 +33,12 @@ export default function ProfileCard({
   const [resetOpen, setResetOpen] = useState(false);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [failedAvatarSrcs, setFailedAvatarSrcs] = useState(() => new Set());
+  const [identitySaving, setIdentitySaving] = useState("");
+  const [nicknameError, setNicknameError] = useState("");
+  const [avatarError, setAvatarError] = useState("");
+  const identitySavingRef = useRef(false);
+  const nicknameId = useId();
+  const avatarDialogTitleId = useId();
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" }); // type: "success" | "error" | "info"
@@ -67,6 +73,37 @@ export default function ProfileCard({
       next.add(key);
       return next;
     });
+  }
+
+  async function handleSaveNickname() {
+    if (identitySavingRef.current || !nickname.trim()) return;
+    identitySavingRef.current = true;
+    setIdentitySaving("nickname");
+    setNicknameError("");
+    try {
+      await onSaveNickname();
+    } catch {
+      setNicknameError("Could not fully save nickname. Some changes may already have been saved; please try again.");
+    } finally {
+      identitySavingRef.current = false;
+      setIdentitySaving("");
+    }
+  }
+
+  async function handleSaveAvatar(avatarId) {
+    if (identitySavingRef.current) return;
+    identitySavingRef.current = true;
+    setIdentitySaving("avatar");
+    setAvatarError("");
+    try {
+      await onSaveAvatarId(avatarId);
+      setAvatarPickerOpen(false);
+    } catch {
+      setAvatarError("Could not fully save avatar. Some changes may already have been saved; please try again.");
+    } finally {
+      identitySavingRef.current = false;
+      setIdentitySaving("");
+    }
   }
 
   async function handleLinkEmailPassword() {
@@ -271,12 +308,14 @@ export default function ProfileCard({
             </div>
 
             <div className="ui-surface-subtle p-4 space-y-3">
-              <label className="ui-field-label">Nickname</label>
+              <label htmlFor={nicknameId} className="ui-field-label">Nickname</label>
               <input
+                id={nicknameId}
                 className="w-full py-2.5"
                 placeholder="Enter nickname"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
+                disabled={!!identitySaving}
               />
 
               <div className="flex items-center justify-between gap-3">
@@ -285,18 +324,19 @@ export default function ProfileCard({
                 </p>
                 <button
                   className="ui-btn-primary text-sm"
-                  onClick={onSaveNickname}
-                  disabled={!nickname.trim()}
+                  onClick={handleSaveNickname}
+                  disabled={!nickname.trim() || !!identitySaving}
                   title={!nickname.trim() ? "Enter a nickname first" : ""}
                 >
-                  Save nickname
+                  {identitySaving === "nickname" ? "Saving…" : "Save nickname"}
                 </button>
               </div>
+              {nicknameError && <p role="alert" className="text-sm text-red-400">{nicknameError}</p>}
             </div>
 
             <div className="ui-surface-subtle p-4 space-y-3">
               <div>
-                <label className="ui-field-label">Avatar</label>
+                <div className="ui-field-label">Avatar</div>
                 <p className="ui-field-hint">Choose from default avatars.</p>
               </div>
 
@@ -325,7 +365,8 @@ export default function ProfileCard({
                 <button
                   type="button"
                   className="ui-btn-secondary text-xs px-3 py-1.5"
-                  onClick={() => setAvatarPickerOpen(true)}
+                  onClick={() => { setAvatarError(""); setAvatarPickerOpen(true); }}
+                  disabled={!!identitySaving}
                 >
                   Change avatar
                 </button>
@@ -409,6 +450,7 @@ export default function ProfileCard({
                   <div className="space-y-2">
                     <input
                       className="py-2.5"
+                      aria-label="Email"
                       placeholder="Email"
                       value={email}
                       onChange={(e) => {
@@ -422,6 +464,7 @@ export default function ProfileCard({
                     {!resetOpen && (
                       <input
                         className="py-2.5"
+                        aria-label="Password"
                         placeholder={mode === "signin" ? "Password" : "Password (min 6 chars)"}
                         type="password"
                         value={password}
@@ -553,20 +596,22 @@ export default function ProfileCard({
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
+          aria-labelledby={avatarDialogTitleId}
         >
           <div
             className="ui-modal-backdrop"
-            onClick={() => setAvatarPickerOpen(false)}
+            onClick={() => { if (!identitySavingRef.current) setAvatarPickerOpen(false); }}
             aria-hidden="true"
           />
 
           <div className="ui-modal-shell max-w-md">
             <div className="ui-modal-header">
-              <h3 className="text-lg font-semibold text-white">Choose avatar</h3>
+              <h3 id={avatarDialogTitleId} className="text-lg font-semibold text-white">Choose avatar</h3>
               <button
                 type="button"
                 className="ui-btn-secondary px-3 py-1 text-xs"
                 onClick={() => setAvatarPickerOpen(false)}
+                disabled={!!identitySaving}
               >
                 Close
               </button>
@@ -583,16 +628,15 @@ export default function ProfileCard({
                     <button
                       key={avatar.id}
                       type="button"
+                      disabled={!!identitySaving}
+                      aria-label={avatar.label || avatar.id}
                       className={[
                         "h-12 overflow-hidden rounded-xl border text-xl transition",
                         selected
                           ? "border-blue-500 bg-blue-500/20"
                           : "border-neutral-700 bg-neutral-900 hover:bg-neutral-800",
                       ].join(" ")}
-                      onClick={() => {
-                        onSaveAvatarId?.(avatar.id);
-                        setAvatarPickerOpen(false);
-                      }}
+                      onClick={() => handleSaveAvatar(avatar.id)}
                       title={avatar.label || avatar.id}
                     >
                       {canRenderAvatarImage ? (
@@ -609,6 +653,8 @@ export default function ProfileCard({
                   );
                 })}
               </div>
+              {identitySaving === "avatar" && <p role="status" className="text-sm text-neutral-400 mt-3">Saving avatar…</p>}
+              {avatarError && <p role="alert" className="text-sm text-red-400 mt-3">{avatarError}</p>}
             </div>
           </div>
         </div>

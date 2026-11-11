@@ -9,6 +9,7 @@ export default function AddGameForm({ form, setForm, onSubmit }) {
 
       <input
         className="w-full mb-2"
+        aria-label="Title"
         placeholder="Title"
         value={form.title}
         onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -17,6 +18,7 @@ export default function AddGameForm({ form, setForm, onSubmit }) {
 
       <input
         className="w-full mb-2"
+        aria-label="Image URL"
         placeholder="Image URL"
         value={form.imageUrl}
         onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
@@ -24,6 +26,7 @@ export default function AddGameForm({ form, setForm, onSubmit }) {
 
       <textarea
         className="w-full mb-2"
+        aria-label="Description"
         placeholder="Description"
         value={form.description}
         onChange={(e) => setForm({ ...form, description: e.target.value })}
