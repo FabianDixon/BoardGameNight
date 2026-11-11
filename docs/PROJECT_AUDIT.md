@@ -181,6 +181,12 @@ limitation described below; the audit is not a clean bill of health.
 
 ### Remaining risks and follow-up
 
+- **Firestore listener assertion:** switching away from Personal stats exposed
+  the Firestore SDK `ca9`/`b815` listener race on version 11.10.0. The SDK was
+  updated to 12.19.0, which includes an upstream fix for one cause of that race;
+  related reports remain open upstream, so this does not guarantee all
+  occurrences are fixed. A local emulator regression exercises rapid listener
+  teardown and a denied analytics query.
 - **Accepted ballots can be omitted:** ballots are read before the close
   transaction. A ballot accepted after that read but before close commits can
   be left out of the result. Firestore's web transaction API cannot lock a

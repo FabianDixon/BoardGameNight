@@ -30,8 +30,9 @@ npm run test:rules:verbose
 - Rules under test: `firestore.rules`
 - Tests: `tests/rules/firestore.rules.test.mjs`,
   `tests/session-creation.rules.test.mjs`, and
-  `tests/hidden-tags.rules.test.mjs`. They run sequentially because they clear
-  the same demo project's emulator data.
+  `tests/hidden-tags.rules.test.mjs`, plus the analytics listener teardown
+  regression in `tests/analytics-listener.rules.test.mjs`. They run sequentially
+  because they share the same demo project's emulator data.
 
 The separate `npm run test:unit` command runs loading, session reliability,
 hidden-tag eligibility, game permissions, modal accessibility, group-history
