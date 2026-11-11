@@ -10,29 +10,36 @@ import { db } from "../firebase";
  * @returns {Map<string, number>} Map of gameId -> rating value
  */
 export function useMyRatings(user) {
-  const [myRatings, setMyRatings] = useState(new Map());
+  const [state, setState] = useState(() => ({ user, myRatings: new Map() }));
+
+  if (state.user !== user) {
+    setState({ user, myRatings: new Map() });
+  }
 
   useEffect(() => {
-    if (!user) {
-      setMyRatings(new Map());
-      return;
-    }
+    if (!user) return;
 
     const q = query(
       collection(db, "ratings"),
       where("userId", "==", user.uid)
     );
 
+    let active = true;
     const unsub = onSnapshot(q, (snap) => {
+      if (!active) return;
+
       const map = new Map();
       snap.forEach((d) => {
         map.set(d.data().gameId, d.data().value);
       });
-      setMyRatings(map);
+      setState({ user, myRatings: map });
     });
 
-    return unsub;
+    return () => {
+      active = false;
+      unsub();
+    };
   }, [user]);
 
-  return myRatings;
+  return state.myRatings;
 }

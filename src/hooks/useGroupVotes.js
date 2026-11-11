@@ -11,23 +11,43 @@ import { db } from "../firebase";
  * @returns {Array<Object>} Array of vote documents with id
  */
 export function useGroupVotes(currentGroupId, groupAccessReady) {
-  const [votes, setVotes] = useState([]);
+  const [state, setState] = useState(() => ({
+    currentGroupId,
+    groupAccessReady,
+    votes: [],
+  }));
+
+  if (
+    state.currentGroupId !== currentGroupId ||
+    state.groupAccessReady !== groupAccessReady
+  ) {
+    setState({ currentGroupId, groupAccessReady, votes: [] });
+  }
 
   useEffect(() => {
-    if (!currentGroupId || !groupAccessReady) {
-      setVotes([]);
-      return;
-    }
+    if (!currentGroupId || !groupAccessReady) return;
 
     const ref = query(
       collection(db, "groups", currentGroupId, "votes"),
       orderBy("createdAt", "desc")
     );
+    let active = true;
 
-    return onSnapshot(ref, (snap) => {
-      setVotes(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (active) {
+        setState({
+          currentGroupId,
+          groupAccessReady,
+          votes: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        });
+      }
     });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [currentGroupId, groupAccessReady]);
 
-  return votes;
+  return state.votes;
 }

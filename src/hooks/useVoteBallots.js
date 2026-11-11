@@ -14,15 +14,33 @@ import { db } from "../firebase";
  * @returns {{myBallot: Object|null, voteBallots: Array<Object>}} Ballot data
  */
 export function useVoteBallots(user, currentGroupId, activeVoteId, groupAccessReady) {
-  const [myBallot, setMyBallot] = useState(null);
-  const [voteBallots, setVoteBallots] = useState([]);
+  const [state, setState] = useState(() => ({
+    user,
+    currentGroupId,
+    activeVoteId,
+    groupAccessReady,
+    myBallot: null,
+    voteBallots: [],
+  }));
+
+  if (
+    state.user !== user ||
+    state.currentGroupId !== currentGroupId ||
+    state.activeVoteId !== activeVoteId ||
+    state.groupAccessReady !== groupAccessReady
+  ) {
+    setState({
+      user,
+      currentGroupId,
+      activeVoteId,
+      groupAccessReady,
+      myBallot: null,
+      voteBallots: [],
+    });
+  }
 
   useEffect(() => {
-    if (!user || !currentGroupId || !activeVoteId || !groupAccessReady) {
-      setMyBallot(null);
-      setVoteBallots([]);
-      return;
-    }
+    if (!user || !currentGroupId || !activeVoteId || !groupAccessReady) return;
 
     const myRef = doc(
       db,
@@ -34,8 +52,22 @@ export function useVoteBallots(user, currentGroupId, activeVoteId, groupAccessRe
       user.uid
     );
 
+    let active = true;
     const unsubMy = onSnapshot(myRef, (snap) => {
-      setMyBallot(snap.exists() ? snap.data() : null);
+      if (active) {
+        setState((current) => {
+          if (
+            current.user !== user ||
+            current.currentGroupId !== currentGroupId ||
+            current.activeVoteId !== activeVoteId ||
+            current.groupAccessReady !== groupAccessReady
+          ) {
+            return current;
+          }
+
+          return { ...current, myBallot: snap.exists() ? snap.data() : null };
+        });
+      }
     });
 
     const allRef = collection(
@@ -48,14 +80,31 @@ export function useVoteBallots(user, currentGroupId, activeVoteId, groupAccessRe
     );
 
     const unsubAll = onSnapshot(allRef, (snap) => {
-      setVoteBallots(snap.docs.map((d) => ({ userId: d.id, ...d.data() })));
+      if (active) {
+        setState((current) => {
+          if (
+            current.user !== user ||
+            current.currentGroupId !== currentGroupId ||
+            current.activeVoteId !== activeVoteId ||
+            current.groupAccessReady !== groupAccessReady
+          ) {
+            return current;
+          }
+
+          return {
+            ...current,
+            voteBallots: snap.docs.map((d) => ({ userId: d.id, ...d.data() })),
+          };
+        });
+      }
     });
 
     return () => {
+      active = false;
       unsubMy();
       unsubAll();
     };
   }, [user, currentGroupId, activeVoteId, groupAccessReady]);
 
-  return { myBallot, voteBallots };
+  return { myBallot: state.myBallot, voteBallots: state.voteBallots };
 }

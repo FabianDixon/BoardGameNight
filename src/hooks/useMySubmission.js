@@ -13,13 +13,31 @@ import { db } from "../firebase";
  * @returns {Object|null} Submission data: { gameId: string|null, isNoSubmission: boolean, exists: boolean }
  */
 export function useMySubmission(userId, currentGroupId, activeVoteId, groupAccessReady) {
-  const [mySubmission, setMySubmission] = useState(null);
+  const [state, setState] = useState(() => ({
+    userId,
+    currentGroupId,
+    activeVoteId,
+    groupAccessReady,
+    mySubmission: null,
+  }));
+
+  if (
+    state.userId !== userId ||
+    state.currentGroupId !== currentGroupId ||
+    state.activeVoteId !== activeVoteId ||
+    state.groupAccessReady !== groupAccessReady
+  ) {
+    setState({
+      userId,
+      currentGroupId,
+      activeVoteId,
+      groupAccessReady,
+      mySubmission: null,
+    });
+  }
 
   useEffect(() => {
-    if (!userId || !currentGroupId || !activeVoteId || !groupAccessReady) {
-      setMySubmission(null);
-      return;
-    }
+    if (!userId || !currentGroupId || !activeVoteId || !groupAccessReady) return;
 
     const ref = doc(
       db,
@@ -30,22 +48,42 @@ export function useMySubmission(userId, currentGroupId, activeVoteId, groupAcces
       "submissions",
       userId
     );
+    let active = true;
 
-    return onSnapshot(ref, (snap) => {
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (!active) return;
+
       if (!snap.exists()) {
-        setMySubmission(null);
+        setState({
+          userId,
+          currentGroupId,
+          activeVoteId,
+          groupAccessReady,
+          mySubmission: null,
+        });
         return;
       }
       
       const data = snap.data();
-      setMySubmission({
-        gameId: data?.gameId ?? null,
-        isNoSubmission: data?.isNoSubmission === true,
-        exists: true,
-        submittedAt: data?.submittedAt ?? null,
+      setState({
+        userId,
+        currentGroupId,
+        activeVoteId,
+        groupAccessReady,
+        mySubmission: {
+          gameId: data?.gameId ?? null,
+          isNoSubmission: data?.isNoSubmission === true,
+          exists: true,
+          submittedAt: data?.submittedAt ?? null,
+        },
       });
     });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [userId, currentGroupId, activeVoteId, groupAccessReady]);
 
-  return mySubmission;
+  return state.mySubmission;
 }

@@ -8,30 +8,42 @@ import { db } from "../firebase";
  * @returns {{ isAdmin: boolean, loadingAdmin: boolean }}
  */
 export default function useIsAdmin(userId) {
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loadingAdmin, setLoadingAdmin] = useState(!!userId);
+  const [state, setState] = useState(() => ({
+    userId,
+    isAdmin: false,
+    loadingAdmin: !!userId,
+  }));
+
+  if (state.userId !== userId) {
+    setState({ userId, isAdmin: false, loadingAdmin: !!userId });
+  }
 
   useEffect(() => {
-    if (!userId) {
-      setIsAdmin(false);
-      setLoadingAdmin(false);
-      return;
-    }
-    setLoadingAdmin(true);
+    if (!userId) return;
+
     const ref = doc(db, "admins", userId);
+    let active = true;
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        setIsAdmin(!!snap.exists() && snap.data()?.isAdmin === true);
-        setLoadingAdmin(false);
+        if (active) {
+          setState({
+            userId,
+            isAdmin: !!snap.exists() && snap.data()?.isAdmin === true,
+            loadingAdmin: false,
+          });
+        }
       },
       () => {
-        setIsAdmin(false);
-        setLoadingAdmin(false);
+        if (active) setState({ userId, isAdmin: false, loadingAdmin: false });
       }
     );
-    return () => unsub();
+
+    return () => {
+      active = false;
+      unsub();
+    };
   }, [userId]);
 
-  return { isAdmin, loadingAdmin };
+  return { isAdmin: state.isAdmin, loadingAdmin: state.loadingAdmin };
 }

@@ -11,19 +11,39 @@ import { db } from "../firebase";
  * @returns {Object|null} Session metadata with id or null
  */
 export function useSessionMeta(currentGroupId, groupAccessReady) {
-  const [sessionMeta, setSessionMeta] = useState(null);
+  const [state, setState] = useState(() => ({
+    currentGroupId,
+    groupAccessReady,
+    sessionMeta: null,
+  }));
+
+  if (
+    state.currentGroupId !== currentGroupId ||
+    state.groupAccessReady !== groupAccessReady
+  ) {
+    setState({ currentGroupId, groupAccessReady, sessionMeta: null });
+  }
 
   useEffect(() => {
-    if (!currentGroupId || !groupAccessReady) {
-      setSessionMeta(null);
-      return;
-    }
+    if (!currentGroupId || !groupAccessReady) return;
 
     const ref = doc(db, "groups", currentGroupId, "activeSession", "meta");
-    return onSnapshot(ref, (snap) => {
-      setSessionMeta(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+    let active = true;
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (active) {
+        setState({
+          currentGroupId,
+          groupAccessReady,
+          sessionMeta: snap.exists() ? { id: snap.id, ...snap.data() } : null,
+        });
+      }
     });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [currentGroupId, groupAccessReady]);
 
-  return sessionMeta;
+  return state.sessionMeta;
 }

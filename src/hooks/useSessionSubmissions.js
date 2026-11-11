@@ -14,13 +14,31 @@ import { VOTE_STATUS } from "../constants/workflow";
  * @returns {Array<Object>} Array of submission documents with userId
  */
 export function useSessionSubmissions(currentGroupId, activeVoteId, activeVoteStatus, groupAccessReady) {
-  const [sessionSubmissions, setSessionSubmissions] = useState([]);
+  const [state, setState] = useState(() => ({
+    currentGroupId,
+    activeVoteId,
+    activeVoteStatus,
+    groupAccessReady,
+    sessionSubmissions: [],
+  }));
+
+  if (
+    state.currentGroupId !== currentGroupId ||
+    state.activeVoteId !== activeVoteId ||
+    state.activeVoteStatus !== activeVoteStatus ||
+    state.groupAccessReady !== groupAccessReady
+  ) {
+    setState({
+      currentGroupId,
+      activeVoteId,
+      activeVoteStatus,
+      groupAccessReady,
+      sessionSubmissions: [],
+    });
+  }
 
   useEffect(() => {
-    if (!currentGroupId || !activeVoteId || activeVoteStatus !== VOTE_STATUS.COLLECTING || !groupAccessReady) {
-      setSessionSubmissions([]);
-      return;
-    }
+    if (!currentGroupId || !activeVoteId || activeVoteStatus !== VOTE_STATUS.COLLECTING || !groupAccessReady) return;
 
     const ref = collection(
       db,
@@ -30,13 +48,25 @@ export function useSessionSubmissions(currentGroupId, activeVoteId, activeVoteSt
       activeVoteId,
       "submissions"
     );
+    let active = true;
 
-    return onSnapshot(ref, (snap) => {
-      setSessionSubmissions(
-        snap.docs.map((d) => ({ userId: d.id, ...d.data() }))
-      );
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (active) {
+        setState({
+          currentGroupId,
+          activeVoteId,
+          activeVoteStatus,
+          groupAccessReady,
+          sessionSubmissions: snap.docs.map((d) => ({ userId: d.id, ...d.data() })),
+        });
+      }
     });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [currentGroupId, activeVoteId, activeVoteStatus, groupAccessReady]);
 
-  return sessionSubmissions;
+  return state.sessionSubmissions;
 }

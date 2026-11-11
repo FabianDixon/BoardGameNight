@@ -11,18 +11,39 @@ import { db } from "../firebase";
  * @returns {Object|null} Weight overrides object or null
  */
 export function useGroupWeights(currentGroupId, groupAccessReady) {
-  const [groupWeightOverrides, setGroupWeightOverrides] = useState(null);
+  const [state, setState] = useState(() => ({
+    currentGroupId,
+    groupAccessReady,
+    groupWeightOverrides: null,
+  }));
+
+  if (
+    state.currentGroupId !== currentGroupId ||
+    state.groupAccessReady !== groupAccessReady
+  ) {
+    setState({ currentGroupId, groupAccessReady, groupWeightOverrides: null });
+  }
 
   useEffect(() => {
-    if (!currentGroupId || !groupAccessReady) {
-      setGroupWeightOverrides(null);
-      return;
-    }
+    if (!currentGroupId || !groupAccessReady) return;
+
     const ref = doc(db, "groups", currentGroupId, "settings", "weights");
-    return onSnapshot(ref, (snap) => {
-      setGroupWeightOverrides(snap.exists() ? snap.data() : null);
+    let active = true;
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (active) {
+        setState({
+          currentGroupId,
+          groupAccessReady,
+          groupWeightOverrides: snap.exists() ? snap.data() : null,
+        });
+      }
     });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [currentGroupId, groupAccessReady]);
 
-  return groupWeightOverrides;
+  return state.groupWeightOverrides;
 }
