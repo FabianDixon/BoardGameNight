@@ -81,6 +81,19 @@ test("real React modal restores FAB focus and landscape actions remain clickable
         throw Error("Timed out waiting for fixture state");
       };
       await wait(() => document.querySelector("[data-quick-actions-toggle]"));
+      const toggle = document.querySelector("[data-quick-actions-toggle]");
+      const toggleRect = toggle.getBoundingClientRect();
+      if (toggleRect.width !== 48 || toggleRect.height !== 48) throw Error("Unexpected FAB size");
+      toggle.click();
+      await wait(() => document.querySelector("[aria-label='Add game']")?.getClientRects().length);
+      for (const [label, icon] of [["Add game", "＋"], ["Settings", "⚙"], ["Personal stats", "📊"]]) {
+        const action = document.querySelector(\`[aria-label="\${label}"]\`);
+        const rect = action.getBoundingClientRect();
+        if (rect.width !== 48 || rect.height !== 48 || action.textContent.trim() !== icon) {
+          throw Error(\`Unexpected icon-only action: \${label}\`);
+        }
+      }
+      toggle.click();
       for (const closeMethod of ["escape", "button"]) {
         const toggle = document.querySelector("[data-quick-actions-toggle]");
         toggle.click();
@@ -119,7 +132,7 @@ test("real React modal restores FAB focus and landscape actions remain clickable
         if (m.height < 44 || a.top < 0 || a.bottom > innerHeight || overlap(m,v)) throw Error("Menu geometry invalid");
         if (document.elementFromPoint(a.left + a.height/2, a.top + a.height/2)?.closest("button") !== action) throw Error("Action is covered");
         if (document.elementFromPoint(v.left + v.height/2, v.top + v.height/2)?.closest("button") !== vote) throw Error("Vote is covered");
-        const profile = document.querySelector("[aria-label='Profile analytics']");
+        const profile = document.querySelector("[aria-label='Personal stats']");
         profile.scrollIntoView({block:"nearest"});
         profile.click();
         await wait(() => document.querySelector("[role='status']").textContent.includes("Profile"));

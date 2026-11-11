@@ -264,7 +264,7 @@ export default function ProfileCard({
           </div>
 
           <div className="min-w-0 flex-1">
-            <h2 className="text-2xl md:text-3xl font-bold text-white">Profile</h2>
+            <h2 className="text-2xl md:text-3xl font-bold text-white">Settings</h2>
 
             {!user ? (
               <p className="mt-2 text-sm text-neutral-400">Signing in…</p>

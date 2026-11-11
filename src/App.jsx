@@ -3037,8 +3037,8 @@ export default function App() {
   ];
   const desktopTabs = [
     ...topLevelTabs,
-    { key: APP_TAB.ANALYTICS, icon: "📊", label: "Analytics" },
-    { key: APP_TAB.PROFILE, icon: "👤", label: "Profile" },
+    { key: APP_TAB.ANALYTICS, icon: "📊", label: "Personal stats" },
+    { key: APP_TAB.PROFILE, icon: "⚙", label: "Settings" },
   ];
 
   function handleTopLevelTabClick(nextTab) {
@@ -3098,7 +3098,7 @@ export default function App() {
         dismissible={false}
       >
         <p className="text-sm text-gray-300 mb-4">
-          Continue with a temporary account to explore the app, or start from Profile to create or sign in to a saved account.
+          Continue with a temporary account to explore the app, or start from Settings to create or sign in to a saved account.
         </p>
 
         <div className="flex flex-col gap-2">
@@ -3114,7 +3114,7 @@ export default function App() {
           </button>
 
           <p className="text-xs text-neutral-500 px-1">
-            Guest mode starts with a temporary account. You can later create a saved account from Profile without changing this identity.
+            Guest mode starts with a temporary account. You can later create a saved account from Settings without changing this identity.
           </p>
 
           <button

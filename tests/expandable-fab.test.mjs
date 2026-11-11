@@ -14,6 +14,7 @@ const fabSource = readFileSync(new URL("../src/components/ui/Fab.jsx", import.me
 const votingSource = readFileSync(new URL("../src/components/VotingPanel.jsx", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
 const profileSource = readFileSync(new URL("../src/components/ProfileCard.jsx", import.meta.url), "utf8");
+const analyticsSource = readFileSync(new URL("../src/components/UserAnalyticsPanel.jsx", import.meta.url), "utf8");
 const tokenSource = readFileSync(new URL("../src/components/TokenCountersTool.jsx", import.meta.url), "utf8");
 
 function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {}) {
@@ -205,7 +206,7 @@ function setup({ callbacks = {}, modalCount = 0, currentDestination = null } = {
     actions() {
       return findAll(tree, (element) =>
         element.type === "button" &&
-        ["Add game", "Settings", "Profile analytics"].includes(element.props["aria-label"])
+        ["Add game", "Settings", "Personal stats"].includes(element.props["aria-label"])
       );
     },
   };
@@ -263,13 +264,19 @@ test("quick actions start collapsed and focus the first action when expanded", (
   h.render();
   assert.equal(h.trigger().props.type, "button");
   assert.equal(h.trigger().props["aria-expanded"], false);
-  assert.equal(h.trigger().props.children[0].props.children, "↑");
+  assert.equal(h.trigger().props.children[0].props.children, "^");
+  assert.match(h.trigger().props.className, /\bh-12 w-12\b/);
 
   h.trigger().props.onClick();
   h.render();
   assert.equal(h.trigger().props["aria-expanded"], true);
   assert.equal(h.trigger().props["aria-label"], "Close quick actions");
-  assert.equal(h.actions().map((button) => button.props["aria-label"]).join(", "), "Add game, Settings, Profile analytics");
+  assert.equal(h.actions().map((button) => button.props["aria-label"]).join(", "), "Add game, Settings, Personal stats");
+  for (const action of h.actions()) {
+    assert.equal(action.props.title, action.props["aria-label"]);
+    assert.equal(action.props.children.props["aria-hidden"], "true");
+    assert.match(action.props.className, /\bh-12 w-12\b/);
+  }
   assert.equal(h.document.activeElement, h.actions()[0].node);
 });
 
@@ -344,6 +351,10 @@ test("the app retains five desktop destinations and three mobile destinations", 
   assert.match(appSource, /onSettings=\{\(\) => handleTopLevelTabClick\(APP_TAB\.PROFILE\)\}/);
   assert.match(appSource, /onProfile=\{\(\) => handleTopLevelTabClick\(APP_TAB\.ANALYTICS\)\}/);
   assert.match(appSource, /grid grid-cols-3 gap-2/);
+  assert.match(navigation, /label: "Personal stats"/);
+  assert.match(navigation, /label: "Settings"/);
+  assert.match(profileSource, />Settings<\/h2>/);
+  assert.equal((analyticsSource.match(/>Personal stats<\/h3>/g) || []).length, 3);
   assert.match(appSource, /restoreFocus=\{restoreQuickActionsFocus\}/);
   const visibility = appSource.slice(appSource.indexOf("const showFab ="), appSource.indexOf("const topLevelTabs ="));
   assert.doesNotMatch(visibility, /isAddGameOpen/);
@@ -352,7 +363,7 @@ test("the app retains five desktop destinations and three mobile destinations", 
 test("current account destination is indicated on the FAB and its matching action", () => {
   for (const [destination, label, icon] of [
     ["settings", "Settings", "⚙"],
-    ["profile", "Profile analytics", "▥"],
+    ["profile", "Personal stats", "📊"],
   ]) {
     const h = setup({ currentDestination: destination });
     h.render();

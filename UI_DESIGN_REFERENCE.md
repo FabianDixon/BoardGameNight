@@ -18,7 +18,8 @@ The current flow is already good:
 		◦	History
 		◦	Settings
 	•	Game Detail
-	•	Profile
+	•	Settings
+	•	Personal stats
 
 The overhaul should preserve that structure while improving:
 	•	visual hierarchy
@@ -58,8 +59,8 @@ A. Keep the current flow
 Do not reinvent navigation or app structure unless something is clearly broken
 or an explicit product decision calls for it. The expandable action button is
 one such decision: it keeps Library, My Collection, and Groups in the mobile
-bottom navigation while providing Add Game, Profile settings, and personal
-analytics from the action button. Desktop navigation retains its destinations.
+bottom navigation while providing Add Game, Settings, and Personal stats from
+the action button. Desktop navigation retains its destinations.
 
 B. Art first
 
@@ -255,7 +256,7 @@ Structure:
 	•	actions
 	•	collection/group/session relevance
 
-Profile
+Settings
 
 Intent: identity + account + future activity
 

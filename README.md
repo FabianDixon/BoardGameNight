@@ -32,8 +32,8 @@ A lightweight web app to help friends organize board game nights:
 
 ### Navigation
 - Library, My Collection, and Groups remain in the mobile bottom navigation
-- Desktop navigation retains the Profile and Analytics destinations
-- Expand the action button for Add Game, Profile settings, and personal analytics
+- Desktop navigation retains the Settings and Personal stats destinations
+- Expand the action button for Add Game, Settings, and Personal stats
 
 ### Voting Sessions
 - Session workflow:

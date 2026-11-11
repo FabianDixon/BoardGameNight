@@ -53,7 +53,7 @@ export default function UserAnalyticsPanel({ userId }) {
   if (loading) {
     return (
       <div className="ui-surface p-5 md:p-6">
-        <h3 className="text-lg font-semibold text-white">Personal analytics</h3>
+        <h3 className="text-lg font-semibold text-white">Personal stats</h3>
         <p className="text-sm text-neutral-400 mt-2">Loading your session stats across groups...</p>
       </div>
     );
@@ -62,7 +62,7 @@ export default function UserAnalyticsPanel({ userId }) {
   if (!hasHistory) {
     return (
       <div className="ui-surface p-5 md:p-6">
-        <h3 className="text-lg font-semibold text-white">Personal analytics</h3>
+        <h3 className="text-lg font-semibold text-white">Personal stats</h3>
         <p className="text-sm text-neutral-400 mt-2">
           No cross-group session history yet. Join sessions and record results to build your profile stats.
         </p>
@@ -73,7 +73,7 @@ export default function UserAnalyticsPanel({ userId }) {
   return (
     <div className="ui-surface p-5 md:p-6 space-y-4">
       <div>
-        <h3 className="text-xl md:text-2xl font-semibold text-white">Personal analytics</h3>
+        <h3 className="text-xl md:text-2xl font-semibold text-white">Personal stats</h3>
         <p className="text-sm text-neutral-400 mt-1">Cross-group stats from your recorded session history.</p>
       </div>
 

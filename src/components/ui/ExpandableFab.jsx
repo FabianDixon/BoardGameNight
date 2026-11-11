@@ -84,7 +84,7 @@ export default function ExpandableFab({
   const actions = [
     { label: "Add game", icon: "＋", onClick: onAddGame },
     { label: "Settings", icon: "⚙", onClick: onSettings, current: currentDestination === "settings" },
-    { label: "Profile analytics", icon: "▥", onClick: onProfile, current: currentDestination === "profile" },
+    { label: "Personal stats", icon: "📊", onClick: onProfile, current: currentDestination === "profile" },
   ];
   const currentAction = actions.find((action) => action.current);
 
@@ -111,14 +111,14 @@ export default function ExpandableFab({
             key={action.label}
             type="button"
             aria-label={action.label}
+            title={action.label}
             aria-current={action.current ? "page" : undefined}
             onClick={() => runAction(action.onClick)}
-            className={`flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium text-neutral-100 shadow-xl transition hover:border-blue-500 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${action.current ? "border-blue-400 bg-blue-900" : "border-neutral-700 bg-neutral-900"}`}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full border shadow-xl transition hover:border-blue-500 hover:bg-neutral-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-400 ${action.current ? "border-blue-400 bg-blue-900" : "border-neutral-700 bg-neutral-900"}`}
           >
-            <span aria-hidden="true" className="text-base text-blue-300">
+            <span aria-hidden="true" className="text-xl text-blue-300">
               {action.icon}
             </span>
-            {action.label === "Profile analytics" ? "Profile" : action.label}
           </button>
         ))}
       </div>
@@ -131,9 +131,9 @@ export default function ExpandableFab({
         aria-controls={menuId}
         title="Quick actions"
         onClick={() => setOpen((isOpen) => !isOpen)}
-        className="relative flex h-14 w-14 items-center justify-center rounded-full border border-blue-500 bg-blue-600 text-3xl text-white shadow-xl transition hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300 active:scale-95"
+        className="relative flex h-12 w-12 items-center justify-center rounded-full border border-blue-500 bg-blue-600 text-3xl text-white shadow-xl transition hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300 active:scale-95"
       >
-        <span aria-hidden="true">{open ? "×" : "↑"}</span>
+        <span aria-hidden="true">{open ? "×" : "^"}</span>
         {currentAction && (
           <span aria-hidden="true" className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-blue-400 bg-neutral-900 text-sm md:hidden">
             {currentAction.icon}
